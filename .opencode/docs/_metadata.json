@@ -1,0 +1,54 @@
+{
+  "documents": {
+    "built2_doo_ooo.md": {
+      "url": "https://built2.doo.ooo/",
+      "title": "Builders League Connector Test Suite",
+      "fetchedAt": "2026-08-04T14:25:47.641Z",
+      "expiresAt": "2026-08-05T14:25:47.641Z",
+      "size": 5996
+    },
+    "built2_doo_ooo_presentation.md": {
+      "url": "https://built2.doo.ooo/presentation",
+      "title": "Kickoff Presentation · Builders League",
+      "fetchedAt": "2026-08-04T14:26:04.922Z",
+      "expiresAt": "2026-08-05T14:26:04.922Z",
+      "size": 396
+    },
+    "built2_doo_ooo_connector_microsoft-dynamics-365.md": {
+      "url": "https://built2.doo.ooo/connector/microsoft-dynamics-365",
+      "title": "Team sign in · Builders League",
+      "fetchedAt": "2026-08-04T14:31:12.549Z",
+      "expiresAt": "2026-08-05T14:31:12.549Z",
+      "size": 353
+    },
+    "built2_doo_ooo_missions_shatha-ebrahem.md": {
+      "url": "https://built2.doo.ooo/missions/shatha-ebrahem",
+      "title": "Team sign in · Builders League",
+      "fetchedAt": "2026-08-04T14:31:12.582Z",
+      "expiresAt": "2026-08-05T14:31:12.582Z",
+      "size": 344
+    },
+    "built2_doo_ooo_api_missions.md": {
+      "url": "https://built2.doo.ooo/api/missions",
+      "title": "Team sign in · Builders League",
+      "fetchedAt": "2026-08-04T14:31:29.225Z",
+      "expiresAt": "2026-08-05T14:31:29.225Z",
+      "size": 333
+    },
+    "built2_doo_ooo_missionsjson.md": {
+      "url": "https://built2.doo.ooo/missions.json",
+      "title": "Team sign in · Builders League",
+      "fetchedAt": "2026-08-04T14:31:29.879Z",
+      "expiresAt": "2026-08-05T14:31:29.879Z",
+      "size": 334
+    },
+    "built2_doo_ooo_console.md": {
+      "url": "https://built2.doo.ooo/console",
+      "title": "Team sign in · Builders League",
+      "fetchedAt": "2026-08-04T14:31:30.123Z",
+      "expiresAt": "2026-08-05T14:31:30.123Z",
+      "size": 328
+    }
+  },
+  "lastUpdated": "2026-08-04T14:31:30.124Z"
+}
