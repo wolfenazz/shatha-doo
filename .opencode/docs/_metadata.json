@@ -48,7 +48,84 @@
       "fetchedAt": "2026-08-04T14:31:30.123Z",
       "expiresAt": "2026-08-05T14:31:30.123Z",
       "size": 328
+    },
+    "learn_microsoft_com_en-us_power-apps_developer_data-platform_authentic.md": {
+      "url": "https://learn.microsoft.com/en-us/power-apps/developer/data-platform/authenticate-oauth",
+      "title": "Use OAuth authentication with Microsoft Dataverse (Dataverse) - Power Apps | Microsoft Learn",
+      "fetchedAt": "2026-08-04T15:52:50.496Z",
+      "expiresAt": "2026-08-05T15:52:50.496Z",
+      "size": 15260
+    },
+    "learn_microsoft_com_en-us_power-apps_developer_data-platform_webapi_ov.md": {
+      "url": "https://learn.microsoft.com/en-us/power-apps/developer/data-platform/webapi/overview",
+      "title": "Use the Microsoft Dataverse Web API (Dataverse) - Power Apps | Microsoft Learn",
+      "fetchedAt": "2026-08-04T15:52:55.079Z",
+      "expiresAt": "2026-08-05T15:52:55.079Z",
+      "size": 8971
+    },
+    "learn_microsoft_com_en-us_power-apps_developer_data-platform_walkthrou.md": {
+      "url": "https://learn.microsoft.com/en-us/power-apps/developer/data-platform/walkthrough-register-app-azure-active-directory",
+      "title": "Tutorial: Register an app with Microsoft Entra ID (Microsoft Dataverse) - Power Apps | Microsoft Learn",
+      "fetchedAt": "2026-08-04T15:52:55.341Z",
+      "expiresAt": "2026-08-05T15:52:55.341Z",
+      "size": 14457
+    },
+    "learn_microsoft_com_en-us_power-apps_developer_data-platform_api-limit.md": {
+      "url": "https://learn.microsoft.com/en-us/power-apps/developer/data-platform/api-limits",
+      "title": "Service protection API limits (Microsoft Dataverse) - Power Apps | Microsoft Learn",
+      "fetchedAt": "2026-08-04T15:52:55.478Z",
+      "expiresAt": "2026-08-05T15:52:55.478Z",
+      "size": 15242
+    },
+    "learn_microsoft_com_en-us_power-apps_developer_data-platform_use-singl.md": {
+      "url": "https://learn.microsoft.com/en-us/power-apps/developer/data-platform/use-single-tenant-server-server-authentication",
+      "title": "Use single-tenant server-to-server authentication (Microsoft Dataverse) - Power Apps | Microsoft Learn",
+      "fetchedAt": "2026-08-04T15:53:01.537Z",
+      "expiresAt": "2026-08-05T15:53:01.537Z",
+      "size": 8468
+    },
+    "learn_microsoft_com_en-us_power-apps_developer_data-platform_webapi_qu.md": {
+      "url": "https://learn.microsoft.com/en-us/power-apps/developer/data-platform/webapi/query-data-web-api",
+      "title": "Use OData to query data - Power Apps | Microsoft Learn",
+      "fetchedAt": "2026-08-04T15:53:01.691Z",
+      "expiresAt": "2026-08-05T15:53:01.691Z",
+      "size": 14223
+    },
+    "www_bing_com_search.md": {
+      "url": "https://www.bing.com/search?q=site%3Alearn.microsoft.com+dataverse+webapi+page+results+odata.nextLink+5000",
+      "title": "site:learn.microsoft.com dataverse webapi page results odata.nextLink 5000 - بحث",
+      "fetchedAt": "2026-08-04T15:53:17.065Z",
+      "expiresAt": "2026-08-05T15:53:17.065Z",
+      "size": 570
+    },
+    "html_duckduckgo_com_html_.md": {
+      "url": "https://html.duckduckgo.com/html/?q=dataverse+web+api+page+results+paging+cookie+%40odata.nextLink",
+      "title": "dataverse web api page results paging cookie @odata.nextLink at DuckDuckGo",
+      "fetchedAt": "2026-08-04T15:53:23.109Z",
+      "expiresAt": "2026-08-05T15:53:23.109Z",
+      "size": 15253
+    },
+    "learn_microsoft_com_en-us_power-apps_developer_data-platform_webapi_re.md": {
+      "url": "https://learn.microsoft.com/en-us/power-apps/developer/data-platform/webapi/reference/task",
+      "title": "task EntityType (Microsoft.Dynamics.CRM) | Microsoft Learn",
+      "fetchedAt": "2026-08-04T15:57:33.759Z",
+      "expiresAt": "2026-08-05T15:57:33.759Z",
+      "size": 15229
+    },
+    "learn_microsoft_com_en-us_power-apps_developer_data-platform_webapi_cr.md": {
+      "url": "https://learn.microsoft.com/en-us/power-apps/developer/data-platform/webapi/create-entity-web-api",
+      "title": "Create a table row using the Web API - Power Apps | Microsoft Learn",
+      "fetchedAt": "2026-08-04T15:57:41.704Z",
+      "expiresAt": "2026-08-05T15:57:41.704Z",
+      "size": 15245
+    },
+    "learn_microsoft_com_en-us_dynamics365_customer-service_develop_referen.md": {
+      "url": "https://learn.microsoft.com/en-us/dynamics365/customer-service/develop/reference/entities/lead",
+      "title": "Lead table/entity reference (Microsoft Dynamics 365 Customer Service) | Microsoft Learn",
+      "fetchedAt": "2026-08-04T16:05:07.639Z",
+      "expiresAt": "2026-08-05T16:05:07.639Z",
+      "size": 4676
     }
   },
-  "lastUpdated": "2026-08-04T14:31:30.124Z"
+  "lastUpdated": "2026-08-04T16:05:07.642Z"
 }
