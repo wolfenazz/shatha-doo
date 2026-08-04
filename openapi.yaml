@@ -1,0 +1,408 @@
+# OpenAPI 3.1.0 specification for the Dynamics 365 Connector
+# --------------------------------------------------------------
+# Generated from the connector manifest (connector.yaml) and the verified
+# action JSON Schemas (src/schemas/index.ts, T1.2). Each path maps one
+# connector action (operationId == action id) so the OpenAPI layer and the
+# thin MCP adapter reuse the same connector core (requirements.md: "OpenAPI
+# and the thin MCP adapter reuse the same connector core").
+openapi: 3.1.0
+info:
+  title: Dynamics 365 Connector API
+  version: 1.0.0
+  description: >-
+    Microsoft Dynamics 365 connector for DOO (Builders League). Exposes five
+    typed actions over the Dynamics 365 Web API v9.2 (OData). Write actions
+    are consequential and require explicit approval.
+  contact:
+    name: Shatha Ebrahem (DOO Builders League, Cohort 01)
+servers:
+  - url: https://<org>.api.crm.dynamics.com/api/data/v9.2
+    description: Dynamics 365 organization Web API (replace <org>).
+  - url: https://your-mcp-endpoint.com
+    description: Deployed MCP endpoint (connector actions).
+security:
+  - oauth2: []
+tags:
+  - name: contacts
+    description: Contact records (entity set `contacts`).
+  - name: leads
+    description: Lead records (entity set `leads`).
+  - name: tasks
+    description: Task records (entity set `tasks`).
+paths:
+  /contacts/search:
+    post:
+      operationId: dynamics.search_contact
+      summary: Search contacts
+      description: >-
+        Read action. Searches contacts by full name (OData `contains`) with an
+        optional extra `$filter`, `$top` page size (default 10, cap 5000) and
+        `$select` projection. Returns the OData page (`value` + optional
+        `@odata.nextLink`).
+      tags: [contacts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchContactInput'
+            examples:
+              default:
+                value:
+                  query: john
+                  top: 10
+                  select: [contactid, firstname, lastname, emailaddress1]
+      responses:
+        '200':
+          description: Matching contacts (one page).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchContactOutput'
+              examples:
+                default:
+                  value:
+                    contacts:
+                      - contactid: 11111111-1111-1111-1111-111111111111
+                        firstname: John
+                        lastname: Doe
+                        fullname: John Doe
+                        emailaddress1: john.doe@example.com
+                        telephone1: '+1-555-0101'
+                        companyname: Example Corp
+                    count: 1
+                    nextLink: null
+        default:
+          $ref: '#/components/responses/Error'
+  /contacts:
+    post:
+      operationId: dynamics.create_contact
+      summary: Create a contact
+      description: >-
+        Write action - approval required. Creates a NEW contact record
+        (`Prefer: return=representation`). Not idempotent and not retry-safe:
+        re-sending may create duplicates. Dedupe by searching first.
+      tags: [contacts]
+      x-approval-required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateContactInput'
+            examples:
+              default:
+                value:
+                  firstname: John
+                  lastname: Doe
+                  emailaddress1: john.doe@example.com
+                  telephone1: '+1-555-0101'
+                  companyname: Example Corp
+      responses:
+        '201':
+          description: Created contact (return=representation).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateContactOutput'
+              examples:
+                default:
+                  value:
+                    contactid: 11111111-1111-1111-1111-111111111111
+                    firstname: John
+                    lastname: Doe
+                    fullname: John Doe
+                    emailaddress1: john.doe@example.com
+                    telephone1: '+1-555-0101'
+                    companyname: Example Corp
+        default:
+          $ref: '#/components/responses/Error'
+  /contacts/{contactid}:
+    patch:
+      operationId: dynamics.update_contact
+      summary: Update a contact
+      description: >-
+        Write action - approval required. PATCHes the specified contact.
+        Idempotent (PATCH semantics): re-sending the same fields has no
+        additional side effect. Returns 204 No Content; the connector reports
+        the acknowledged id.
+      tags: [contacts]
+      x-approval-required: true
+      parameters:
+        - name: contactid
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Guid'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateContactInput'
+            examples:
+              default:
+                value:
+                  lastname: Smith
+                  emailaddress1: jane.smith@example.com
+      responses:
+        '200':
+          description: Update acknowledged.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateContactOutput'
+              examples:
+                default:
+                  value:
+                    contactid: 11111111-1111-1111-1111-111111111111
+                    success: true
+        default:
+          $ref: '#/components/responses/Error'
+  /leads:
+    post:
+      operationId: dynamics.create_lead
+      summary: Create a lead
+      description: >-
+        Write action - approval required. Creates a NEW lead record
+        (`Prefer: return=representation`). `companyname` is required
+        (Dynamics requirement). Not idempotent.
+      tags: [leads]
+      x-approval-required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLeadInput'
+            examples:
+              default:
+                value:
+                  firstname: Bob
+                  lastname: Wilson
+                  companyname: Potential Client Inc
+                  subject: Interested in services
+      responses:
+        '201':
+          description: Created lead (return=representation).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateLeadOutput'
+              examples:
+                default:
+                  value:
+                    leadid: 33333333-3333-3333-3333-333333333333
+                    firstname: Bob
+                    lastname: Wilson
+                    fullname: Bob Wilson
+                    emailaddress1: bob.wilson@potential.com
+                    companyname: Potential Client Inc
+                    subject: Interested in services
+        default:
+          $ref: '#/components/responses/Error'
+  /tasks:
+    post:
+      operationId: dynamics.create_task
+      summary: Create a task
+      description: >-
+        Write action - approval required. Creates a NEW task record
+        (`Prefer: return=representation`). `subject` is required; date-times
+        are ISO-8601 (`scheduledstart`/`scheduledend`). Not idempotent.
+      tags: [tasks]
+      x-approval-required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTaskInput'
+            examples:
+              default:
+                value:
+                  subject: Follow up with John Doe
+                  scheduledstart: '2026-08-10T09:00:00Z'
+                  scheduledend: '2026-08-10T09:30:00Z'
+                  regardingobjectid: 11111111-1111-1111-1111-111111111111
+      responses:
+        '201':
+          description: Created task (return=representation).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateTaskOutput'
+              examples:
+                default:
+                  value:
+                    activityid: 55555555-5555-5555-5555-555555555555
+                    subject: Follow up with John Doe
+                    description: Call to discuss the proposal.
+                    scheduledstart: '2026-08-10T09:00:00Z'
+                    scheduledend: '2026-08-10T09:30:00Z'
+                    regardingobjectid: 11111111-1111-1111-1111-111111111111
+        default:
+          $ref: '#/components/responses/Error'
+components:
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://login.microsoftonline.com/<tenant>/oauth2/v2.0/authorize
+          tokenUrl: https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token
+          refreshUrl: https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token
+          scopes:
+            'https://<org>.api.crm.dynamics.com/.default': Access the Dynamics 365 org Web API
+  responses:
+    Error:
+      description: Normalized connector error (request id + retry classification).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ConnectorError'
+  schemas:
+    Guid:
+      type: string
+      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+      description: Dynamics 365 record identifier (GUID).
+    ConnectorError:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Machine-readable code (e.g. RATE_LIMIT_EXCEEDED, AUTH_FAILED, INVALID_INPUT).
+        message:
+          type: string
+          description: Secret-safe, human-readable message.
+        requestId:
+          type: string
+          description: Dynamics `x-ms-request-id` from the failed request.
+        retryable:
+          type: boolean
+          description: Whether the caller may safely retry.
+      required: [code, message, retryable]
+    Contact:
+      type: object
+      properties:
+        contactid: { $ref: '#/components/schemas/Guid' }
+        firstname: { type: string }
+        lastname: { type: string }
+        fullname: { type: string, description: Read-only computed full name. }
+        emailaddress1: { type: string, format: email }
+        telephone1: { type: string }
+        companyname: { type: string }
+    Lead:
+      type: object
+      properties:
+        leadid: { $ref: '#/components/schemas/Guid' }
+        firstname: { type: string }
+        lastname: { type: string }
+        fullname: { type: string, description: Read-only computed full name. }
+        emailaddress1: { type: string, format: email }
+        companyname: { type: string }
+        subject: { type: string }
+    Task:
+      type: object
+      properties:
+        activityid: { $ref: '#/components/schemas/Guid' }
+        subject: { type: string }
+        description: { type: string }
+        scheduledstart: { type: string, format: date-time }
+        scheduledend: { type: string, format: date-time }
+        regardingobjectid: { $ref: '#/components/schemas/Guid' }
+    SearchContactInput:
+      type: object
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Search term matched against the contact full name.
+        filter:
+          type: string
+          description: Additional OData $filter expression (AND-ed).
+        top:
+          type: integer
+          minimum: 1
+          maximum: 5000
+          default: 10
+        select:
+          type: array
+          items: { type: string }
+          description: Attributes to return ($select).
+      required: [query]
+      additionalProperties: false
+    SearchContactOutput:
+      type: object
+      properties:
+        contacts:
+          type: array
+          items: { $ref: '#/components/schemas/Contact' }
+        count: { type: integer, minimum: 0 }
+        nextLink: { type: string, format: uri, description: 'OData @odata.nextLink for the next page.' }
+      required: [contacts, count]
+      additionalProperties: false
+    CreateContactInput:
+      type: object
+      properties:
+        firstname: { type: string }
+        lastname: { type: string }
+        emailaddress1: { type: string, format: email }
+        telephone1: { type: string }
+        companyname: { type: string }
+      anyOf:
+        - { required: [firstname] }
+        - { required: [lastname] }
+      additionalProperties: false
+    CreateContactOutput:
+      allOf:
+        - $ref: '#/components/schemas/Contact'
+        - type: object
+          required: [contactid]
+    UpdateContactInput:
+      type: object
+      properties:
+        contactid: { $ref: '#/components/schemas/Guid' }
+        firstname: { type: string }
+        lastname: { type: string }
+        emailaddress1: { type: string, format: email }
+        telephone1: { type: string }
+        companyname: { type: string }
+      required: [contactid]
+      additionalProperties: false
+    UpdateContactOutput:
+      type: object
+      properties:
+        contactid: { $ref: '#/components/schemas/Guid' }
+        success: { type: boolean, const: true }
+      required: [contactid, success]
+      additionalProperties: false
+    CreateLeadInput:
+      type: object
+      properties:
+        firstname: { type: string }
+        lastname: { type: string }
+        emailaddress1: { type: string, format: email }
+        companyname: { type: string }
+        subject: { type: string }
+      required: [companyname]
+      additionalProperties: false
+    CreateLeadOutput:
+      allOf:
+        - $ref: '#/components/schemas/Lead'
+        - type: object
+          required: [leadid]
+    CreateTaskInput:
+      type: object
+      properties:
+        subject: { type: string, minLength: 1 }
+        description: { type: string }
+        scheduledstart: { type: string, format: date-time }
+        scheduledend: { type: string, format: date-time }
+        regardingobjectid: { $ref: '#/components/schemas/Guid' }
+      required: [subject]
+      additionalProperties: false
+    CreateTaskOutput:
+      allOf:
+        - $ref: '#/components/schemas/Task'
+        - type: object
+          required: [activityid]

@@ -1,0 +1,50 @@
+# Dynamics 365 Connector manifest (DOO Builders League standard)
+name: dynamics365-connector
+version: 1.0.0
+description: Microsoft Dynamics 365 connector for DOO
+
+provider:
+  name: Microsoft Dynamics 365
+  version: v9.2
+  type: Enterprise CRM
+
+auth:
+  type: oauth2
+  grantTypes:
+    - authorization_code
+    - refresh_token
+  scopes:
+    - Dynamics CRM.UserBasic
+    - Dynamics CRM.Organization.Read
+    - Dynamics CRM.Organization.Write
+
+actions:
+  - id: dynamics.search_contact
+    type: read
+    description: Search for contacts
+  - id: dynamics.create_contact
+    type: write
+    description: Create a new contact
+    approval: required
+  - id: dynamics.update_contact
+    type: write
+    description: Update an existing contact
+    approval: required
+  - id: dynamics.create_lead
+    type: write
+    description: Create a new lead
+    approval: required
+  - id: dynamics.create_task
+    type: write
+    description: Create a new task
+    approval: required
+
+capabilities:
+  pagination: true
+  rateLimiting: true
+  retry: true
+
+risks:
+  - Write actions modify production data
+  - OAuth tokens expire and need refresh
+  - Rate limits may affect batch operations
