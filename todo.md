@@ -7,85 +7,85 @@
 
 ---
 
-## M1: Research & Planning | status: in_progress
+## M1: Research & Planning | status: completed
 
-### T1.1: API Research | agent:Worker
-- [ ] S1.1.1: Research Dynamics 365 Web API endpoints | size:S
-- [ ] S1.1.2: Document OAuth 2.0 authentication flow | size:S
-- [ ] S1.1.3: Identify Azure app registration permissions | size:S
-- [ ] S1.1.4: Document rate limits and pagination | size:S
-- [ ] S1.1.5: Identify access blockers and workarounds | size:S
+### T1.1: API Research | agent:Worker | status: completed
+- [x] S1.1.1: Research Dynamics 365 Web API endpoints | verified: docs/research/api-endpoints-auth.md (entity sets, CRUD, query opts, WhoAmI)
+- [x] S1.1.2: Document OAuth 2.0 authentication flow | verified: docs/research/api-endpoints-auth.md §3 (auth-code+refresh, scopes, MSAL, S2S)
+- [x] S1.1.3: Identify Azure app registration permissions | verified: docs/research/permissions-limits-blockers.md §1
+- [x] S1.1.4: Document rate limits and pagination | verified: docs/research/permissions-limits-blockers.md §2
+- [x] S1.1.5: Identify access blockers and workarounds | verified: docs/research/permissions-limits-blockers.md §3
 
-### T1.2: Action Schema Design | agent:Worker | depends:T1.1
-- [ ] S1.2.1: Design schema for dynamics.search_contact | size:M
-- [ ] S1.2.2: Design schema for dynamics.create_contact | size:M
-- [ ] S1.2.3: Design schema for dynamics.update_contact | size:M
-- [ ] S1.2.4: Design schema for dynamics.create_lead | size:M
-- [ ] S1.2.5: Design schema for dynamics.create_task | size:M
+### T1.2: Action Schema Design | agent:Worker | depends:T1.1 | status: completed
+- [x] S1.2.1: Design schema for dynamics.search_contact | size:M | verified: 2026-08-04T19:21Z Reviewer PASS (UT 12/12, prettier+eslint clean, module tsc EXIT=0)
+- [x] S1.2.2: Design schema for dynamics.create_contact | size:M | verified: 2026-08-04T19:21Z Reviewer PASS (UT 12/12, prettier+eslint clean, module tsc EXIT=0)
+- [x] S1.2.3: Design schema for dynamics.update_contact | size:M | verified: 2026-08-04T19:21Z Reviewer PASS (UT 12/12, prettier+eslint clean, module tsc EXIT=0)
+- [x] S1.2.4: Design schema for dynamics.create_lead | size:M | verified: 2026-08-04T19:21Z Reviewer PASS (UT 12/12, prettier+eslint clean, module tsc EXIT=0)
+- [x] S1.2.5: Design schema for dynamics.create_task | size:M | verified: 2026-08-04T19:21Z Reviewer PASS (UT 12/12, prettier+eslint clean, module tsc EXIT=0)
 
-### T1.3: Project Setup | agent:Worker
-- [ ] S1.3.1: Initialize Node.js project with TypeScript | size:S
-- [ ] S1.3.2: Configure ESLint and Prettier | size:S
-- [ ] S1.3.3: Set up Jest testing framework | size:S
-- [ ] S1.3.4: Create .env.example | size:S
-- [ ] S1.3.5: Create connector.yaml manifest | size:S
+### T1.3: Project Setup | agent:Worker | status: completed
+- [x] S1.3.1: Initialize Node.js project with TypeScript | size:S | verified: 2026-08-04T19:21Z Reviewer (package.json/tsconfig.json present, UT-record 1916Z build/typecheck/test green)
+- [x] S1.3.2: Configure ESLint and Prettier | size:S | verified: 2026-08-04T19:21Z Reviewer (.eslintrc.json + .prettierrc.json present, eslint@8 legacy-config compatible)
+- [x] S1.3.3: Set up Jest testing framework | size:S | verified: 2026-08-04T19:21Z Reviewer (jest.config.js present, jest 1/1 green 19:16Z)
+- [x] S1.3.4: Create .env.example | size:S | verified: 2026-08-04T19:21Z Reviewer (file present, no secrets)
+- [x] S1.3.5: Create connector.yaml manifest | size:S | verified: 2026-08-04T19:21Z Reviewer (file present)
 
-### T1.4: Milestone 1 Review | agent:Reviewer | depends:T1.1,T1.2,T1.3
-- [ ] S1.4.1: Verify research documentation complete | size:S
-- [ ] S1.4.2: Verify all 5 action schemas defined | size:S
-- [ ] S1.4.3: Verify project structure ready | size:S
+### T1.4: Milestone 1 Review | agent:Reviewer | depends:T1.1,T1.2,T1.3 | status: completed
+- [x] S1.4.1: Verify research documentation complete | size:S | verified: 2026-08-04T19:23Z Reviewer PASS (api-endpoints-auth.md 284 lines + permissions-limits-blockers.md 164 lines, content PASS 19:08Z)
+- [x] S1.4.2: Verify all 5 action schemas defined | size:S | verified: 2026-08-04T19:23Z Reviewer PASS (src/schemas/index.ts contains all 5 exact IDs: search/create/update_contact, create_lead, create_task)
+- [x] S1.4.3: Verify project structure ready | size:S | verified: 2026-08-04T19:23Z Reviewer PASS (21 scaffold files Test-Path TRUE, typecheck/build/test green 19:16Z)
 
 ---
 
-## M2: Core Implementation | status:pending | depends:M1
+## M2: Core Implementation | status: completed | depends:M1
 
-### T2.1: Client Implementation | agent:Worker
-- [ ] S2.1.1: Implement Dynamics365Client class | size:L
-- [ ] S2.1.2: Implement OAuth 2.0 token acquisition | size:M
-- [ ] S2.1.3: Implement token refresh logic | size:M
-- [ ] S2.1.4: Add request/response interceptors | size:M
-- [ ] S2.1.5: Implement error normalization | size:M
+### T2.1: Client Implementation | agent:Worker | status: completed
+- [x] S2.1.1: Implement Dynamics365Client class | size:L | verified: 2026-08-04T19:26Z Reviewer PASS (UT 15/15 re-run, tsc/build green, UT-record 1921Z-client-t2.1.md)
+- [x] S2.1.2: Implement OAuth 2.0 token acquisition | size:M | verified: src/auth/index.ts (isolated 11/11, lint/prettier clean, tsc+build+jest EXIT=0, UT-record 2026-08-04T1912Z-auth-index.md)
+- [x] S2.1.3: Implement token refresh logic | size:M | verified: src/auth/index.ts (refreshAccessToken 11/11 incl. 2 refresh tests, UT-record above)
+- [x] S2.1.4: Add request/response interceptors | size:M | verified: 2026-08-04T19:26Z Reviewer PASS (Bearer attach + empty-token reject + 429/401/network normalization, 15/15)
+- [x] S2.1.5: Implement error normalization | size:M | verified: 2026-08-04T19:26Z Reviewer PASS (response interceptor → ConnectorError, retryable + x-ms-request-id, 15/15)
 
-### T2.2: Connector Core | agent:Worker | depends:T2.1
-- [ ] S2.2.1: Implement DooConnector interface | size:M
-- [ ] S2.2.2: Implement testConnection method | size:M
-- [ ] S2.2.3: Implement listActions method | size:S
-- [ ] S2.2.4: Implement execute method with routing | size:M
+### T2.2: Connector Core | agent:Worker | depends:T2.1 | status: completed
+- [x] S2.2.1: Implement DooConnector interface | size:M | verified: 2026-08-04T19:26Z Reviewer PASS (manifest/listActions/execute/testConnection all implemented, 11/11)
+- [x] S2.2.2: Implement testConnection method | size:M | verified: 2026-08-04T19:26Z Reviewer PASS (credential-shape validation, missing keys listed, 11/11)
+- [x] S2.2.3: Implement listActions method | size:S | verified: 2026-08-04T19:26Z Reviewer PASS (exactly 5 ids, schemas attached from T1.2 registry, write actions approval:required, 11/11)
+- [x] S2.2.4: Implement execute method with routing | size:M | verified: 2026-08-04T19:26Z Reviewer PASS (UNKNOWN_ACTION + NOT_IMPLEMENTED normalized routing, lazy client from credentials, 11/11)
 
-### T2.3: Action search_contact | agent:Worker | depends:T2.1
-- [ ] S2.3.1: Implement search logic with OData | size:M
-- [ ] S2.3.2: Add input validation | size:S
-- [ ] S2.3.3: Add example responses | size:S
+### T2.3: Action search_contact | agent:Worker | depends:T2.1 | status: completed
+- [x] S2.3.1: Implement search logic with OData | size:M | verified: 2026-08-04T19:35Z Reviewer PASS (src/actions/search-contact.ts — $filter contains(fullname) + optional filter, $top default 10 cap 5000, $select; UT 15/15, UT-record 1935Z-actions-t23-t27.md)
+- [x] S2.3.2: Add input validation | size:S | verified: 2026-08-04T19:35Z Reviewer PASS (VALIDATION_ERROR on missing query/non-object; OData single-quote escaping verified)
+- [x] S2.3.3: Add example responses | size:S | verified: 2026-08-04T19:35Z Reviewer PASS (action.examples non-empty, inputSchema/outputSchema attached)
 
-### T2.4: Action create_contact | agent:Worker | depends:T2.1
-- [ ] S2.4.1: Implement create contact API call | size:M
-- [ ] S2.4.2: Add input validation | size:S
-- [ ] S2.4.3: Document approval requirement | size:S
+### T2.4: Action create_contact | agent:Worker | depends:T2.1 | status: completed
+- [x] S2.4.1: Implement create contact API call | size:M | verified: 2026-08-04T19:35Z Reviewer PASS (client.post('/contacts', body, {preferReturn:true}) returns created record)
+- [x] S2.4.2: Add input validation | size:S | verified: 2026-08-04T19:35Z Reviewer PASS (VALIDATION_ERROR when neither firstname nor lastname present)
+- [x] S2.4.3: Document approval requirement | size:S | verified: 2026-08-04T19:35Z Reviewer PASS (approval:required + JSDoc idempotency/duplicates/retry, metadata)
 
-### T2.5: Action update_contact | agent:Worker | depends:T2.1
-- [ ] S2.5.1: Implement update contact API call | size:M
-- [ ] S2.5.2: Add input validation | size:S
-- [ ] S2.5.3: Document approval and idempotency | size:S
+### T2.5: Action update_contact | agent:Worker | depends:T2.1 | status: completed
+- [x] S2.5.1: Implement update contact API call | size:M | verified: 2026-08-04T19:35Z Reviewer PASS (client.patch('/contacts(<guid>)', fields) omits contactid; returns {contactid, success:true})
+- [x] S2.5.2: Add input validation | size:S | verified: 2026-08-04T19:35Z Reviewer PASS (VALIDATION_ERROR on missing/invalid contactid GUID)
+- [x] S2.5.3: Document approval and idempotency | size:S | verified: 2026-08-04T19:35Z Reviewer PASS (approval:required + PATCH idempotency/retry-safe documented)
 
-### T2.6: Action create_lead | agent:Worker | depends:T2.1
-- [ ] S2.6.1: Implement create lead API call | size:M
-- [ ] S2.6.2: Add input validation | size:S
-- [ ] S2.6.3: Document approval requirement | size:S
+### T2.6: Action create_lead | agent:Worker | depends:T2.1 | status: completed
+- [x] S2.6.1: Implement create lead API call | size:M | verified: 2026-08-04T19:35Z Reviewer PASS (client.post('/leads', body, {preferReturn:true}) returns created lead with leadid)
+- [x] S2.6.2: Add input validation | size:S | verified: 2026-08-04T19:35Z Reviewer PASS (VALIDATION_ERROR without companyname)
+- [x] S2.6.3: Document approval requirement | size:S | verified: 2026-08-04T19:35Z Reviewer PASS (approval:required documented)
 
-### T2.7: Action create_task | agent:Worker | depends:T2.1
-- [ ] S2.7.1: Implement create task API call | size:M
-- [ ] S2.7.2: Add input validation | size:S
-- [ ] S2.7.3: Document approval requirement | size:S
+### T2.7: Action create_task | agent:Worker | depends:T2.1 | status: completed
+- [x] S2.7.1: Implement create task API call | size:M | verified: 2026-08-04T19:35Z Reviewer PASS (client.post('/tasks', body, {preferReturn:true}) returns created task with activityid)
+- [x] S2.7.2: Add input validation | size:S | verified: 2026-08-04T19:35Z Reviewer PASS (VALIDATION_ERROR without subject)
+- [x] S2.7.3: Document approval requirement | size:S | verified: 2026-08-04T19:35Z Reviewer PASS (approval:required documented)
 
-### T2.8: Error Handling | agent:Worker | depends:T2.1
-- [ ] S2.8.1: Create ConnectorError class | size:S
-- [ ] S2.8.2: Implement error normalization | size:M
-- [ ] S2.8.3: Add retry classification | size:S
+### T2.8: Error Handling | agent:Worker | depends:T2.1 | status: completed
+- [x] S2.8.1: Create ConnectorError class | size:S | verified: 2026-08-04T19:19Z Reviewer PASS (UT 18/18, lint clean, build/tests green)
+- [x] S2.8.2: Implement error normalization | size:M | verified: 2026-08-04T19:19Z Reviewer PASS (UT 18/18, lint clean, build/tests green)
+- [x] S2.8.3: Add retry classification | size:S | verified: 2026-08-04T19:19Z Reviewer PASS (UT 18/18, lint clean, build/tests green)
 
-### T2.9: Milestone 2 Review | agent:Reviewer | depends:T2.1-T2.8
-- [ ] S2.9.1: Verify testConnection works | size:S
-- [ ] S2.9.2: Verify all 5 actions implemented | size:S
-- [ ] S2.9.3: Verify error handling normalized | size:S
+### T2.9: Milestone 2 Review | agent:Reviewer | depends:T2.1-T2.8 | status: completed
+- [x] S2.9.1: Verify testConnection works | size:S | verified: 2026-08-04T19:35Z Reviewer PASS (src/connector.ts testConnection — credential-shape validation + missing-key listing, UT 11/11 in T2.2 review 19:26Z, UT-record 1923Z-connector-core.md)
+- [x] S2.9.2: Verify all 5 actions implemented | size:S | verified: 2026-08-04T19:35Z Reviewer PASS (all 5 action modules read + isolated 15/15 PASS + connector wires all 5 handlers; UT-record 1935Z-actions-t23-t27.md)
+- [x] S2.9.3: Verify error handling normalized | size:S | verified: 2026-08-04T19:35Z Reviewer PASS (T2.8 ConnectorError/normalizeDynamicsError/retry classification [x] 19:19Z; handlers throw VALIDATION_ERROR codes, client interceptor normalizes provider errors — 15/15)
 
 ---
 
@@ -103,18 +103,18 @@
 - [ ] S3.2.3: Write tests for all 5 actions | size:L
 - [ ] S3.2.4: Write tests for error handling | size:M
 
-### T3.3: Fixtures | agent:Worker
-- [ ] S3.3.1: Create mock contact data | size:S
-- [ ] S3.3.2: Create mock lead data | size:S
-- [ ] S3.3.3: Create mock task data | size:S
-- [ ] S3.3.4: Create mock API responses | size:M
+### T3.3: Fixtures | agent:Worker | status: completed
+- [x] S3.3.1: Create mock contact data | size:S | verified: 2026-08-04T19:21Z Reviewer PASS (UT 8/8, eslint clean, module tsc EXIT=0, SYNC-3 resolved)
+- [x] S3.3.2: Create mock lead data | size:S | verified: 2026-08-04T19:21Z Reviewer PASS (UT 8/8, eslint clean, module tsc EXIT=0)
+- [x] S3.3.3: Create mock task data | size:S | verified: 2026-08-04T19:21Z Reviewer PASS (UT 8/8, eslint clean, module tsc EXIT=0)
+- [x] S3.3.4: Create mock API responses | size:M | verified: 2026-08-04T19:21Z Reviewer PASS (UT 8/8, eslint clean, module tsc EXIT=0, prettier 54:20 fixed)
 
-### T3.4: Examples | agent:Worker
-- [ ] S3.4.1: Create example for search_contact | size:S
-- [ ] S3.4.2: Create example for create_contact | size:S
-- [ ] S3.4.3: Create example for update_contact | size:S
-- [ ] S3.4.4: Create example for create_lead | size:S
-- [ ] S3.4.5: Create example for create_task | size:S
+### T3.4: Examples | agent:Worker | status: completed
+- [x] S3.4.1: Create example for search_contact | size:S | verified: 2026-08-04T19:31Z Reviewer PASS (SYNC-5 RESOLVED — prettier reformatted; npx prettier --check "examples/**/*.ts" EXIT=0 + eslint EXIT=0)
+- [x] S3.4.2: Create example for create_contact | size:S | verified: 2026-08-04T19:21Z Reviewer PASS (eslint EXIT=0, tsc via ses_7 19:16Z)
+- [x] S3.4.3: Create example for update_contact | size:S | verified: 2026-08-04T19:21Z Reviewer PASS (eslint EXIT=0, tsc via ses_7 19:16Z)
+- [x] S3.4.4: Create example for create_lead | size:S | verified: 2026-08-04T19:21Z Reviewer PASS (eslint EXIT=0, tsc via ses_7 19:16Z)
+- [x] S3.4.5: Create example for create_task | size:S | verified: 2026-08-04T19:21Z Reviewer PASS (eslint EXIT=0, tsc via ses_7 19:16Z)
 
 ### T3.5: Milestone 3 Review | agent:Reviewer | depends:T3.1-T3.4
 - [ ] S3.5.1: Run all unit tests | size:S
@@ -197,9 +197,9 @@
 
 | Milestone | Status | Tasks |
 |-----------|--------|-------|
-| M1: Research & Planning | IN_PROGRESS | 18 |
-| M2: Core Implementation | PENDING | 26 |
-| M3: MCP Adapter & Testing | PENDING | 17 |
+| M1: Research & Planning | COMPLETED | 18 |
+| M2: Core Implementation | COMPLETED | 26 |
+| M3: MCP Adapter & Testing | IN_PROGRESS | 17 |
 | M4: Documentation & OpenAPI | PENDING | 14 |
 | M5: Final Validation & Release | PENDING | 19 |
 | **TOTAL** | - | **94** |

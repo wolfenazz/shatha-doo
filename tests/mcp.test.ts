@@ -17,7 +17,12 @@ import type {
   ConnectorExecutionResult,
   DooConnector,
 } from '../src/types';
-import { createMcpServer, server as sharedServer, start as startShared } from '../mcp/server';
+import {
+  createMcpServer,
+  jsonSchemaToZodShape,
+  server as sharedServer,
+  start as startShared,
+} from '../mcp/server';
 
 /** The exact connector action ids (mirrors connector.yaml). */
 const ACTION_IDS = [
@@ -57,7 +62,7 @@ function fakeConnector(execute: DooConnector['execute']): DooConnector {
       auth: { type: 'oauth2', grantTypes: ['authorization_code', 'refresh_token'], scopes: [] },
       actions: fakeActions(),
     },
-    testConnection: async () => ({ success: true, message: 'fake connector (isolated test)' }),
+    testConnection: async () => ({ success: true, message: 'fake connector (permanent suite)' }),
     listActions: fakeActions,
     execute,
   };
@@ -89,7 +94,7 @@ describe('mcp/server.ts — thin MCP adapter (T3.1)', () => {
     execute = jest.fn<Promise<ConnectorExecutionResult>, [ConnectorExecutionRequest]>();
     connector = fakeConnector(execute);
     server = createMcpServer(connector);
-    client = new Client({ name: 'mcp-isolated-test', version: '1.0.0' });
+    client = new Client({ name: 'mcp-test-client', version: '1.0.0' });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     // Connect BOTH ends concurrently — sequential connect deadlocks the
     // initialize handshake (client awaits a response the server can only
@@ -163,5 +168,28 @@ describe('mcp/server.ts — thin MCP adapter (T3.1)', () => {
   it('S3.1.1: exports the shared server instance and a start() entrypoint', () => {
     expect(sharedServer).toBeDefined();
     expect(typeof startShared).toBe('function');
+  });
+
+  it('S3.1.1: createMcpServer is named/versioned from the connector manifest', async () => {
+    // The SDK client receives the server implementation info during the
+    // initialize handshake — asserted through the REAL protocol.
+    const info = client.getServerVersion();
+    expect(info).toBeDefined();
+    expect(info?.name).toBe('dynamics365-connector');
+    expect(info?.version).toBe('1.0.0');
+  });
+
+  it('S3.1.1: jsonSchemaToZodShape maps required vs optional JSON Schema properties', () => {
+    const shape = jsonSchemaToZodShape({
+      type: 'object',
+      properties: { query: { type: 'string' }, top: { type: 'integer' } },
+      required: ['query'],
+    });
+    // Required property rejects undefined; optional property accepts it.
+    expect(shape.query.safeParse(undefined).success).toBe(false);
+    expect(shape.top.safeParse(undefined).success).toBe(true);
+    // Non-schema input degrades to an empty shape.
+    expect(jsonSchemaToZodShape(null)).toEqual({});
+    expect(jsonSchemaToZodShape({ type: 'string' })).toEqual({});
   });
 });
