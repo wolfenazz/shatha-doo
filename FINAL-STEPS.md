@@ -1,21 +1,21 @@
 # NEXT STEPS — Finish the Dynamics 365 Connector (v1.0.0)
 
-**Builder:** Shatha Ebrahem · **Date:** 2026-08-04
-**Status:** Code complete ✅ · **Remaining:** Real-sandbox validation, deploy, and DOO console submission
+**Builder:** Shatha Ebrahem · **Date:** 2026-08-04 · **Updated:** 2026-08-05
+**Status:** Code complete ✅ · **Step 5 (deploy) DONE** ✅ · **Remaining:** Steps 1–4 (sandbox, on hold), Step 6 (submit), Step 7 (final check)
 
 ---
 
 ## TL;DR — What's left
 
-| # | Task | Why it matters | Effort |
-|---|------|----------------|--------|
-| 1 | Provision a Dynamics 365 trial sandbox | Only blocker for the real end-to-end test | 30–60 min |
-| 2 | Register an Azure app + grant permissions | Lets your connector authenticate | 20–30 min |
-| 3 | Configure `.env` and run `testConnection` | Proves auth works with a real org | 10 min |
-| 4 | Run one real create-contact flow | Closes Definition of Done #9 (sandbox test) | 15 min |
-| 5 | Deploy the MCP endpoint to HTTPS | Required by the validation console | 30–60 min |
-| 6 | Submit to the DOO validation console | Official validation + review slug | 15 min |
-| 7 | Do the final DoD self-check & demo | Handoff-ready | 20 min |
+| # | Task | Status | Effort |
+|---|------|--------|--------|
+| 1 | Provision a Dynamics 365 trial sandbox | ⏸ on hold (waiting on IT / free-trial path) | 30–60 min |
+| 2 | Register an Azure app + grant permissions | ⏸ on hold (needs the sandbox tenant) | 20–30 min |
+| 3 | Configure `.env` and run `testConnection` | ⏸ on hold | 10 min |
+| 4 | Run one real create-contact flow | ⏸ on hold (closes DoD #9) | 15 min |
+| 5 | Deploy the MCP endpoint to HTTPS | ✅ **DONE** — `https://shatha-doo-production.up.railway.app` | 30–60 min |
+| 6 | Submit to the DOO validation console | ▶ **do this now** — ZIP + MCP URL | 15 min |
+| 7 | Do the final DoD self-check & demo | ▶ after Step 6 | 20 min |
 
 Everything else (5 actions, auth code, errors, schemas, OpenAPI, MCP adapter, tests, docs, tag `v1.0.0`) is **done and green** — 72/72 tests pass.
 
@@ -137,9 +137,18 @@ Then try the other four:
 
 ---
 
-## Step 5 — Deploy the MCP endpoint to HTTPS
+## Step 5 — Deploy the MCP endpoint to HTTPS ✅ DONE (2026-08-05)
 
-> The validation console needs a **public HTTPS URL** for your MCP server.
+> **Live endpoint:** `https://shatha-doo-production.up.railway.app` — verified over HTTPS with an MCP client: initialize OK, all 5 tools listed, clean `[MISSING_ORG_URL]` errors (expected until the sandbox is ready).
+
+**How it was done:** Railway (`railway up` from the project folder) with the `Procfile` (`web: npm run build && node dist/mcp/http-server.js`). Two fixes were required along the way:
+1. The server must run the **HTTP transport** (`mcp/http-server.ts`, `npm run mcp:http`) — the stdio server has no HTTP surface.
+2. `mcp/http-server.ts` shims `globalThis.crypto` — the MCP SDK's bare `crypto.randomUUID()` throws `ReferenceError` on Node 18 at request time (verified on 18.20.8).
+
+**Ops notes:**
+- `PORT` is set to `3000` as a Railway variable; the public domain targets port 3000.
+- Redeploy after code changes: `railway up` (auto-deploy is off in this project).
+- Placeholder env vars are fine until Steps 1–4 complete; swap them in the Variables tab later.
 
 **Choose ONE platform (pick the easiest you already use):**
 
@@ -172,6 +181,8 @@ fly deploy
 ---
 
 ## Step 6 — Submit to the DOO validation console
+
+> **Ready to submit now:** MCP URL = `https://shatha-doo-production.up.railway.app` + the codebase ZIP (rebuild it to include the HTTP transport).
 
 1. Go to https://built2.doo.ooo/console
 2. Sign in with your **@doo.ooo** email (secure-link sign-in, no password).
