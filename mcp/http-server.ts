@@ -12,10 +12,23 @@
  * Run (HTTP): `node dist/mcp/http-server.js` after `npm run build`.
  * Port: `process.env.PORT` (Railway default) or 3000 locally.
  */
-import { randomUUID } from 'node:crypto';
+import { randomUUID, webcrypto } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createMcpServer } from './server';
+
+// The SDK references the global `crypto` object (Web Crypto) directly; on some
+// Node 18 runtimes that bare reference fails with ReferenceError even though
+// `globalThis.crypto` exists. Expose it as a plain data property up front.
+try {
+  Object.defineProperty(globalThis, 'crypto', {
+    value: webcrypto,
+    writable: true,
+    configurable: true,
+  });
+} catch {
+  // The runtime already exposes a non-configurable global; leave it as-is.
+}
 
 const PORT = Number(process.env.PORT ?? 3000);
 
