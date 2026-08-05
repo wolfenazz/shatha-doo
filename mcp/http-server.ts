@@ -1,18 +1,23 @@
 /**
  * HTTP MCP adapter for the Dynamics 365 connector (deployment entry point).
  *
- * Serves the same McpServer instance over the MCP Streamable HTTP transport
- * (the stdio transport is available via `npm run mcp`). Reuses
- * `createMcpServer()` from `./server`, so no tool logic is duplicated here:
+ * Serves the McpServer over the MCP Streamable HTTP transport (the stdio
+ * transport is available via `npm run mcp`). Reuses `createMcpServer()` from
+ * `./server`, so no tool logic is duplicated here:
  *  - GET  → endpoint discovery / SSE stream (Streamable HTTP)
  *  - POST → JSON-RPC messages (initialize, tools/list, tools/call, ...)
  *  - DELETE → session termination
  *  - OPTIONS → CORS preflight for browser-based MCP clients
  *
+ * Each HTTP request gets a fresh stateless server + transport, so any client
+ * (or validation run) can initialize independently — a single shared stateful
+ * transport would reject a second `initialize` with "Server already
+ * initialized" for the lifetime of the container.
+ *
  * Run (HTTP): `node dist/mcp/http-server.js` after `npm run build`.
  * Port: `process.env.PORT` (Railway default) or 3000 locally.
  */
-import { randomUUID, webcrypto } from 'node:crypto';
+import { webcrypto } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createMcpServer } from './server';
@@ -44,20 +49,21 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     res.end();
     return;
   }
+  const server = createMcpServer();
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+  });
+  await server.connect(transport);
   await transport.handleRequest(req, res);
 }
 
-const server = createMcpServer();
-const transport = new StreamableHTTPServerTransport({
-  sessionIdGenerator: () => randomUUID(),
-});
-
 async function bootstrap(): Promise<void> {
-  await server.connect(transport);
   const httpServer = createServer((req, res) => {
     handleRequest(req, res).catch((error: unknown) => {
-      res.statusCode = 500;
-      res.end(error instanceof Error ? error.message : String(error));
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.end(error instanceof Error ? error.message : String(error));
+      }
     });
   });
   httpServer.listen(PORT, () => {
