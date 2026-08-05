@@ -43,6 +43,8 @@ dynamics365-connector/
 │   ├── errors/index.ts       # ConnectorError + normalizeDynamicsError + retry flags
 │   └── types.ts              # Shared DooConnector contracts
 ├── mcp/server.ts             # Thin MCP adapter (tools -> connector.execute)
+├── mcp/http-server.ts        # HTTP MCP adapter (Streamable HTTP, deployment entry point)
+├── Procfile                  # Deploy start command (web: build + http-server)
 ├── tests/                    # Unit tests + fixtures
 ├── examples/                 # Usage examples for each action
 ├── docs/research/            # API/endpoints/auth/limits research (S1.1.x)
@@ -145,15 +147,35 @@ node dist/examples/create-lead.js
 node dist/examples/create-task.js
 ```
 
-### MCP adapter (stdio)
+### MCP adapter
+
+**Stdio (local/embedded use):**
 
 ```bash
-node dist/mcp/server.js
+node dist/mcp/server.js        # or: npm run mcp
 ```
 
-The server exposes all five actions as MCP tools (`dynamics.search_contact`, ...). It is a
-**thin adapter only** — every tool call forwards to the shared `connector.execute()` core
+**Streamable HTTP (deployment — what a public MCP endpoint must run):**
+
+```bash
+node dist/mcp/http-server.js   # or: npm run mcp:http   (listens on $PORT, default 3000)
+```
+
+Both expose all five actions as MCP tools (`dynamics.search_contact`, ...) and are
+**thin adapters only** — every tool call forwards to the shared `connector.execute()` core
 (no duplicated provider or business logic).
+
+**Deploying to HTTPS (e.g., Railway):**
+
+```
+web: npm run build && node dist/mcp/http-server.js
+```
+
+The `Procfile` ships this as the start command. The HTTP transport serves the same server
+instance over MCP Streamable HTTP (`GET`/`POST`/`DELETE`), so a deployed container answers
+`initialize`, `tools/list`, and `tools/call` from any MCP client. Note: `mcp/http-server.ts`
+shims `globalThis.crypto`, because the MCP SDK references the global `crypto` object and
+that bare reference fails on some Node 18 runtimes.
 
 ---
 
