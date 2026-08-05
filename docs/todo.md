@@ -1,8 +1,8 @@
 # Mission: Microsoft Dynamics 365 Connector
 
-**Builder:** Shatha Ebrahem  
-**Status:** IN_PROGRESS  
-**Start Date:** 2026-08-04  
+**Builder:** Shatha Ebrahem
+**Status:** IN_PROGRESS
+**Start Date:** 2026-08-04
 **Target:** v1.0.0
 
 ---

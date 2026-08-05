@@ -262,7 +262,7 @@ export async function executeSearchContact(
   input: any
 ): Promise<ConnectorExecutionResult> {
   const { query, filter, top } = input;
-  
+
   let odataFilter = `contains(fullname,'${query}')`;
   if (filter) {
     odataFilter = `${odataFilter} and ${filter}`;
@@ -316,7 +316,7 @@ export class ConnectorError extends Error {
 
 export function normalizeDynamicsError(error: any): ConnectorError {
   const requestId = error.response?.headers?.['x-ms-request-id'];
-  
+
   if (error.response?.status === 429) {
     return new ConnectorError(
       'Rate limit exceeded',
@@ -647,12 +647,12 @@ class RateLimiter {
   async acquire(): Promise<void> {
     const now = Date.now();
     this.requests = this.requests.filter((t) => now - t < this.windowMs);
-    
+
     if (this.requests.length >= this.maxRequests) {
       const waitTime = this.windowMs - (now - this.requests[0]);
       await sleep(waitTime);
     }
-    
+
     this.requests.push(Date.now());
   }
 }
@@ -667,17 +667,17 @@ async function getAllPages<T>(
 ): Promise<T[]> {
   const allResults: T[] = [];
   let nextLink: string | null = endpoint;
-  
+
   while (nextLink) {
     const response = await client.get(nextLink);
     allResults.push(...response.data.value);
     nextLink = response.data['@odata.nextLink'] || null;
-    
+
     if (nextLink) {
       await sleep(100); // Rate limit protection
     }
   }
-  
+
   return allResults;
 }
 ```
