@@ -13,6 +13,7 @@
     "lint": "eslint \"src/**/*.ts\" \"mcp/**/*.ts\" \"tests/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\" \"mcp/**/*.ts\" \"tests/**/*.ts\"",
     "mcp": "node dist/mcp/server.js",
+    "mcp:http": "node dist/mcp/http-server.js",
     "typecheck": "tsc --noEmit"
   },
   "engines": {

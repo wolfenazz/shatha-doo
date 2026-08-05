@@ -146,9 +146,11 @@ Then try the other four:
 **A) Railway (very easy)**
 1. Push this repo to GitHub (already done: `origin` → your repo).
 2. New project → **Deploy from GitHub repo** → Railway auto-detects.
-3. Add the `.env` variables from Step 3 in the project's **Variables** tab.
-4. Start command: `npm run build && npm run mcp`
-5. Railway gives you a public URL.
+3. Add the `.env` variables from Step 3 in the project's **Variables** tab (placeholders are fine until the sandbox is ready).
+4. Start command: `npm run build && node dist/mcp/http-server.js`
+5. Railway gives you a public URL — that's your **MCP URL** for the console.
+
+> ⚠️ Use the **HTTP transport** (`mcp/http-server.ts`, via `npm run mcp:http`) for deployment — the stdio server (`npm run mcp`) has no HTTP surface, so a public URL on it alone would fail console checks. `mcp/http-server.ts` serves the same tools over MCP Streamable HTTP on `$PORT`.
 
 **B) Vercel**
 ```bash
@@ -215,7 +217,9 @@ npm run build               # compile to dist/ (EXIT=0)
 npm test                    # 5 suites / 72 tests (EXIT=0)
 npm run lint                # eslint (EXIT=0)
 npm run mcp                 # run MCP stdio server locally
+npm run mcp:http            # run MCP Streamable HTTP server locally (deploy this)
 node dist/mcp/server.js     # same as above
+node dist/mcp/http-server.js
 ```
 
 ## Useful links
