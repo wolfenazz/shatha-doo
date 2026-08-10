@@ -30,6 +30,38 @@ import { Dynamics365Connector } from '../src/connector';
 import { ConnectorError } from '../src/errors';
 import type { DooConnector } from '../src/types';
 
+/**
+ * Maps `D365_*` environment variables onto connector credentials. Returns
+ * `undefined` when no `D365_ORG_URL` is configured so tool calls keep the
+ * normalized `MISSING_ORG_URL` error instead of silently misbehaving.
+ */
+export function credentialsFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): Record<string, string> | undefined {
+  const orgUrl = env.D365_ORG_URL;
+  if (typeof orgUrl !== 'string' || orgUrl.trim().length === 0) {
+    return undefined;
+  }
+  const fieldMap: Record<string, string | undefined> = {
+    accessToken: env.D365_ACCESS_TOKEN,
+    tenantId: env.D365_TENANT_ID,
+    clientId: env.D365_CLIENT_ID,
+    clientSecret: env.D365_CLIENT_SECRET,
+    redirectUri: env.D365_REDIRECT_URI,
+    tokenUrl: env.D365_TOKEN_URL,
+    code: env.D365_AUTH_CODE,
+    refreshToken: env.D365_REFRESH_TOKEN,
+    scope: env.D365_SCOPE,
+  };
+  const credentials: Record<string, string> = { orgUrl: orgUrl.trim() };
+  for (const [key, value] of Object.entries(fieldMap)) {
+    if (typeof value === 'string' && value.trim().length > 0) {
+      credentials[key] = value.trim();
+    }
+  }
+  return credentials;
+}
+
 /** Maps a JSON Schema property `type` to a Zod type (thin type translation). */
 function zodForType(type: unknown): z.ZodTypeAny {
   switch (type) {
@@ -97,7 +129,11 @@ export function registerAllTools(server: McpServer, connector: DooConnector): vo
       },
       async (args) => {
         try {
-          const result = await connector.execute({ actionId: action.id, input: args ?? {} });
+          const result = await connector.execute({
+            actionId: action.id,
+            input: args ?? {},
+            credentials: credentialsFromEnv(),
+          });
           if (result.success) {
             return { content: [{ type: 'text', text: JSON.stringify(result.data ?? null) }] };
           }

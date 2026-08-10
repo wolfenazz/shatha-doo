@@ -28,6 +28,12 @@ export interface OAuthConfig {
   redirectUri: string;
   /** Scope string, e.g. https://<org>.api.crm.dynamics.com/.default. */
   scope: string;
+  /**
+   * Token endpoint override (defaults to the Microsoft identity platform v2.0
+   * endpoint for `tenantId`). Used by tests and the offline mock sandbox to
+   * point OAuth traffic at a local token server.
+   */
+  tokenUrl?: string;
   /** Authorization code from the authorize endpoint (authorization_code grant). */
   code?: string;
   /** Refresh token (refresh_token grant). Treat like a password. */
@@ -86,6 +92,14 @@ export async function acquireToken(config: OAuthConfig): Promise<string> {
 }
 
 /**
+ * Acquire a token and return the full normalized `TokenResponse` (access
+ * token, rotated refresh token, and lifetime) so callers can cache it.
+ */
+export async function acquireTokenResponse(config: OAuthConfig): Promise<TokenResponse> {
+  return fetchToken(config);
+}
+
+/**
  * Exchange a refresh token for a fresh TokenResponse
  * (grant_type=refresh_token).
  *
@@ -139,7 +153,7 @@ async function requestToken(
   let response;
   try {
     response = await axios.post<TokenEndpointResponse>(
-      TOKEN_URL(config.tenantId),
+      config.tokenUrl ?? TOKEN_URL(config.tenantId),
       body.toString(),
       {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

@@ -62,6 +62,8 @@ export class ConnectorError extends Error {
   requestId?: string;
   retryable: boolean;
   providerError?: unknown;
+  /** Server-requested wait before retrying (ms), from the `Retry-After` header. */
+  retryAfterMs?: number;
 
   constructor(
     message: string,
@@ -69,6 +71,7 @@ export class ConnectorError extends Error {
     requestId?: string,
     retryable = false,
     providerError?: unknown,
+    retryAfterMs?: number,
   ) {
     super(message);
     this.name = 'ConnectorError';
@@ -76,6 +79,7 @@ export class ConnectorError extends Error {
     this.requestId = requestId;
     this.retryable = retryable;
     this.providerError = providerError;
+    this.retryAfterMs = retryAfterMs;
   }
 }
 
@@ -117,6 +121,32 @@ function extractRequestId(error: ErrorLike | undefined): string | undefined {
     if (key.toLowerCase() === 'x-ms-request-id') {
       const value = headers[key];
       return typeof value === 'string' && value.length > 0 ? value : undefined;
+    }
+  }
+  return undefined;
+}
+
+/** Extracts the `Retry-After` header as milliseconds (seconds when numeric). */
+function extractRetryAfterMs(error: ErrorLike | undefined): number | undefined {
+  const headers = error?.response?.headers;
+  if (!headers || typeof headers !== 'object') {
+    return undefined;
+  }
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === 'retry-after') {
+      const value = headers[key];
+      if (typeof value !== 'string' || value.length === 0) {
+        return undefined;
+      }
+      const seconds = Number(value);
+      if (Number.isFinite(seconds) && seconds >= 0) {
+        return seconds * 1000;
+      }
+      const httpDate = Date.parse(value);
+      if (Number.isFinite(httpDate)) {
+        return Math.max(0, httpDate - Date.now());
+      }
+      return undefined;
     }
   }
   return undefined;
@@ -165,6 +195,7 @@ export function normalizeDynamicsError(error: unknown): ConnectorError {
   const requestId = extractRequestId(err);
   const status = extractStatus(err);
   const providerError = extractProviderData(err);
+  const retryAfterMs = extractRetryAfterMs(err);
 
   if (typeof status === 'number') {
     if (status === 429) {
@@ -174,6 +205,7 @@ export function normalizeDynamicsError(error: unknown): ConnectorError {
         requestId,
         true,
         providerError,
+        retryAfterMs,
       );
     }
     if (status === 401) {
@@ -201,7 +233,14 @@ export function normalizeDynamicsError(error: unknown): ConnectorError {
       );
     }
     if (status >= 500) {
-      return new ConnectorError('Provider error', 'PROVIDER_ERROR', requestId, true, providerError);
+      return new ConnectorError(
+        'Provider error',
+        'PROVIDER_ERROR',
+        requestId,
+        true,
+        providerError,
+        retryAfterMs,
+      );
     }
     return new ConnectorError('Unknown error', 'UNKNOWN_ERROR', requestId, false, providerError);
   }

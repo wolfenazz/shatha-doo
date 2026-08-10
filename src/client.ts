@@ -19,8 +19,8 @@
  * - If the token provider returns an empty value the request is rejected
  *   rather than silently sending an unauthenticated request.
  */
-import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
-import { normalizeDynamicsError } from './errors';
+import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
+import { ConnectorError, normalizeDynamicsError } from './errors';
 
 /** Configuration for the Dynamics 365 Web API client. */
 export interface Dynamics365ClientConfig {
@@ -32,6 +32,16 @@ export interface Dynamics365ClientConfig {
   getAccessToken: () => Promise<string> | string;
   /** Request timeout in milliseconds, defaults to 30_000. */
   timeoutMs?: number;
+  /**
+   * Automatic retries for retryable failures (429 / 5xx / network), defaults
+   * to 2. Set to 0 to disable retrying (callers then handle `retryable`
+   * errors themselves).
+   */
+  maxRetries?: number;
+  /** Base exponential-backoff delay in ms, defaults to 250. */
+  retryBaseDelayMs?: number;
+  /** Cap on the backoff delay in ms, defaults to 4_000. */
+  retryMaxDelayMs?: number;
 }
 
 /** `WhoAmI()` function response (research §2.6) — proves a valid scoped token. */
@@ -55,6 +65,9 @@ function trimTrailingSlash(url: string): string {
 
 export class Dynamics365Client {
   private readonly http: AxiosInstance;
+  private readonly maxRetries: number;
+  private readonly retryBaseDelayMs: number;
+  private readonly retryMaxDelayMs: number;
 
   constructor(config: Dynamics365ClientConfig) {
     if (!config || typeof config.orgUrl !== 'string' || config.orgUrl.trim() === '') {
@@ -63,6 +76,10 @@ export class Dynamics365Client {
     if (typeof config.getAccessToken !== 'function') {
       throw new Error('Dynamics365Client requires a getAccessToken() function.');
     }
+
+    this.maxRetries = config.maxRetries ?? 2;
+    this.retryBaseDelayMs = config.retryBaseDelayMs ?? 250;
+    this.retryMaxDelayMs = config.retryMaxDelayMs ?? 4_000;
 
     const apiVersion = config.apiVersion ?? 'v9.2';
     const baseURL = `${trimTrailingSlash(config.orgUrl)}/api/data/${apiVersion}/`;
@@ -95,10 +112,36 @@ export class Dynamics365Client {
     );
   }
 
+  /**
+   * Runs an HTTP call with exponential backoff for retryable failures.
+   * `Retry-After` (when present on the error) is honored and capped at
+   * `retryMaxDelayMs`; otherwise the backoff is `base * 2^attempt`. Retried
+   * calls are jitter-free by design (deterministic tests, predictable load).
+   */
+  private async withRetry<T>(fn: () => Promise<AxiosResponse<T>>): Promise<T> {
+    let attempt = 0;
+    for (;;) {
+      try {
+        const { data } = await fn();
+        return data;
+      } catch (error) {
+        const normalized = error instanceof ConnectorError ? error : normalizeDynamicsError(error);
+        if (!normalized.retryable || attempt >= this.maxRetries) {
+          throw normalized;
+        }
+        const backoff = Math.min(
+          normalized.retryAfterMs ?? this.retryBaseDelayMs * Math.pow(2, attempt),
+          this.retryMaxDelayMs,
+        );
+        await new Promise((resolve) => setTimeout(resolve, backoff));
+        attempt += 1;
+      }
+    }
+  }
+
   /** GET a resource; `params` carries OData query options ($filter/$select/$top/...). */
   async get<T>(path: string, params?: Record<string, unknown>): Promise<T> {
-    const { data } = await this.http.get<T>(path, params ? { params } : undefined);
-    return data;
+    return this.withRetry(() => this.http.get<T>(path, params ? { params } : undefined));
   }
 
   /** POST a new entity; use `preferReturn` to receive the created record body. */
@@ -106,19 +149,17 @@ export class Dynamics365Client {
     const requestConfig: AxiosRequestConfig | undefined = options?.preferReturn
       ? { headers: { Prefer: 'return=representation' } }
       : undefined;
-    const { data } = await this.http.post<T>(path, body, requestConfig);
-    return data;
+    return this.withRetry(() => this.http.post<T>(path, body, requestConfig));
   }
 
   /** PATCH an existing entity (`contacts(<contactid>)`); returns 204 by default. */
   async patch<T>(path: string, body: unknown): Promise<T> {
-    const { data } = await this.http.patch<T>(path, body);
-    return data;
+    return this.withRetry(() => this.http.patch<T>(path, body));
   }
 
   /** DELETE an entity. */
   async delete(path: string): Promise<void> {
-    await this.http.delete(path);
+    await this.withRetry(() => this.http.delete(path));
   }
 
   /** Lightweight, side-effect-free connection check (research §2.6). */

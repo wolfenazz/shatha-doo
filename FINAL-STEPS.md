@@ -1,7 +1,7 @@
-# NEXT STEPS — Finish the Dynamics 365 Connector (v1.0.0)
+# NEXT STEPS — Finish the Dynamics 365 Connector (v1.1.0)
 
-**Builder:** Shatha Ebrahem · **Date:** 2026-08-04 · **Updated:** 2026-08-05
-**Status:** Code complete ✅ · **Step 5 (deploy) DONE** ✅ · **Remaining:** Steps 1–4 (sandbox, on hold), Step 6 (submit), Step 7 (final check)
+**Builder:** Shatha Ebrahem · **Date:** 2026-08-04 · **Updated:** 2026-08-10
+**Status:** Code complete ✅ (v1.1.0) · **Offline proof** ✅ (`npm run demo`, 110 tests) · **Step 5 (deploy) DONE** ✅ · **Remaining:** Steps 1–4 (live sandbox, blocked on Microsoft 365 tenant + Azure AD), Step 6 (submit), Step 7 (final check)
 
 ---
 
@@ -9,15 +9,22 @@
 
 | # | Task | Status | Effort |
 |---|------|--------|--------|
-| 1 | Provision a Dynamics 365 trial sandbox | ⏸ on hold (waiting on IT / free-trial path) | 30–60 min |
+| 1 | Provision a Dynamics 365 trial sandbox | ⏸ on hold (no Microsoft 365 tenant / Azure AD available) | 30–60 min |
 | 2 | Register an Azure app + grant permissions | ⏸ on hold (needs the sandbox tenant) | 20–30 min |
 | 3 | Configure `.env` and run `testConnection` | ⏸ on hold | 10 min |
 | 4 | Run one real create-contact flow | ⏸ on hold (closes DoD #9) | 15 min |
 | 5 | Deploy the MCP endpoint to HTTPS | ✅ **DONE** — `https://shatha-doo-production.up.railway.app` | 30–60 min |
-| 6 | Submit to the DOO validation console | ▶ **do this now** — ZIP + MCP URL | 15 min |
+| 6 | Submit to the DOO validation console | ▶ **do this now** — ZIP + MCP URL + blocker note (see `docs/SUBMISSION.md`) | 15 min |
 | 7 | Do the final DoD self-check & demo | ▶ after Step 6 | 20 min |
 
-Everything else (5 actions, auth code, errors, schemas, OpenAPI, MCP adapter, tests, docs, tag `v1.0.0`) is **done and green** — 72/72 tests pass.
+> **v1.1.0 (2026-08-10):** OAuth is now wired into the connector core (token
+> acquisition + refresh + cache), `testConnection` runs a real WhoAmI probe,
+> retry-with-backoff honors `Retry-After`, CI + coverage gates were added, and a
+> **bundled mock sandbox** (`npm run demo`) proves the whole stack end-to-end
+> offline — 7/7 checks. See `docs/CHANGELOG.md` and `docs/SUBMISSION.md`.
+
+Everything else (5 actions, auth code, errors, schemas, OpenAPI, MCP adapter, unit +
+integration tests, CI, docs, tags `v1.0.0` + `v1.1.0`) is **done and green** — 110/110 tests pass.
 
 ---
 
@@ -183,6 +190,9 @@ fly deploy
 ## Step 6 — Submit to the DOO validation console
 
 > **Ready to submit now:** MCP URL = `https://shatha-doo-production.up.railway.app` + the codebase ZIP (rebuild it to include the HTTP transport).
+> **Include the blocker note** from `docs/SUBMISSION.md` — the organizers confirmed the code can be
+> submitted as-is: mention that it was **not tested live because no Microsoft 365 tenant and Azure AD
+> environment is available**, which are required for the final validation.
 
 1. Go to https://built2.doo.ooo/console
 2. Sign in with your **@doo.ooo** email (secure-link sign-in, no password).
@@ -198,23 +208,23 @@ fly deploy
 Tick every box — all are done EXCEPT the sandbox/deploy ones you just completed:
 
 - [x] Manifest identifies provider, version, auth type, scopes, actions, risks, capabilities
-- [x] testConnection verifies credentials without side effects
+- [x] testConnection verifies credentials (shape + real WhoAmI probe when a token source exists)
 - [x] All 5 actions work through the shared execute interface
 - [x] Every action has typed JSON Schema inputs, outputs, and examples
 - [x] Errors normalized with request IDs + retry classification
 - [x] Pagination + rate-limit metadata returned where relevant
 - [x] Write actions document approval, idempotency, duplicates, retry
 - [x] No secrets in code, Git history, logs, fixtures, screenshots
-- [x] Unit + fixture tests pass
-- [ ] **One real sandbox flow proven** ← *you just did this in Step 4*
+- [x] Unit + integration + MCP tests pass (110/110); offline demo 7/7 (`npm run demo`)
+- [ ] **One real sandbox flow proven** ← blocked: no Microsoft 365 tenant / Azure AD available
 - [x] OpenAPI + MCP adapter reuse the same connector core
 - [x] Known limitations documented
-- [x] Release tagged v1.0.0 with handoff notes
+- [x] Release tagged v1.1.0 with handoff + submission notes
 
-**Then prepare your demo (5 min):**
-1. Show `testConnection` returning success (live auth).
-2. Search a contact you created in the sandbox.
-3. Create a lead and a task live.
+**Then prepare your demo (5 min) — works offline with the mock sandbox:**
+1. `npm run demo` → testConnection WhoAmI probe succeeds.
+2. Create + search a contact, update its phone.
+3. Create a lead and a task.
 4. Show the validation slug from Step 6.
 
 ---
@@ -225,8 +235,10 @@ Tick every box — all are done EXCEPT the sandbox/deploy ones you just complete
 npm install                 # install deps
 npm run typecheck           # tsc --noEmit  (EXIT=0)
 npm run build               # compile to dist/ (EXIT=0)
-npm test                    # 5 suites / 72 tests (EXIT=0)
+npm test                    # 7 suites / 110 tests (EXIT=0)
+npm run test:coverage       # + coverage gate (≥80% stmts/lines/funcs, ≥70% branches)
 npm run lint                # eslint (EXIT=0)
+npm run demo                # offline end-to-end demo vs mock sandbox (7/7 checks)
 npm run mcp                 # run MCP stdio server locally
 npm run mcp:http            # run MCP Streamable HTTP server locally (deploy this)
 node dist/mcp/server.js     # same as above

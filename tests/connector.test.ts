@@ -8,14 +8,19 @@
  *  - execute(): UNKNOWN_ACTION for unknown ids; routes every known id to its
  *    registered handler with `(client, input, credentials)`; normalizes a
  *    throwing handler and a failed lazy-client build into failed results
- *  - testConnection(): credential-shape validation with missing-key listing
+ *  - testConnection(): credential-shape validation + real WhoAmI probe
+ *  - OAuth wiring (v1.1.0): token acquisition via authorization_code or
+ *    refresh_token with in-memory caching; accessToken fast path
  *
  * OFFLINE: axios.create is mocked so the lazily-built Web API client never
- * performs I/O; routing is verified with registered spy handlers.
+ * performs I/O; routing is verified with registered spy handlers and the
+ * OAuth token functions (src/auth) are mocked.
  */
+import axios from 'axios';
 import { Dynamics365Connector } from '../src/connector';
 import { Dynamics365Client } from '../src/client';
 import { ConnectorError } from '../src/errors';
+import { acquireTokenResponse, refreshAccessToken } from '../src/auth';
 import { ConnectorExecutionResult } from '../src/types';
 
 jest.mock('axios', () => {
@@ -27,6 +32,15 @@ jest.mock('axios', () => {
     delete: jest.fn().mockResolvedValue({ data: {} }),
   };
   return { __esModule: true, default: { create: jest.fn(() => instance) } };
+});
+
+jest.mock('../src/auth', () => {
+  const actual = jest.requireActual('../src/auth');
+  return {
+    ...actual,
+    acquireTokenResponse: jest.fn(),
+    refreshAccessToken: jest.fn(),
+  };
 });
 
 /** The five required action ids (connector.yaml / .opencode/context.md). */
@@ -49,12 +63,24 @@ describe('Dynamics365Connector (S3.2.2)', () => {
 
   beforeEach(() => {
     connector = new Dynamics365Connector();
+    (acquireTokenResponse as jest.Mock).mockReset();
+    (refreshAccessToken as jest.Mock).mockReset();
+    (acquireTokenResponse as jest.Mock).mockResolvedValue({
+      accessToken: 'oauth-access',
+      refreshToken: 'oauth-refresh-new',
+      expiresIn: 3600,
+    });
+    (refreshAccessToken as jest.Mock).mockResolvedValue({
+      accessToken: 'oauth-access',
+      refreshToken: 'oauth-refresh-new',
+      expiresIn: 3600,
+    });
   });
 
   describe('manifest', () => {
     it('exposes name/provider/auth per connector.yaml', () => {
       expect(connector.manifest.name).toBe('dynamics365-connector');
-      expect(connector.manifest.version).toBe('1.0.0');
+      expect(connector.manifest.version).toBe('1.1.0');
       expect(connector.manifest.provider.name).toBe('Microsoft Dynamics 365');
       expect(connector.manifest.provider.version).toBe('v9.2');
       expect(connector.manifest.provider.type).toBe('Enterprise CRM');
@@ -225,6 +251,157 @@ describe('Dynamics365Connector (S3.2.2)', () => {
       expect(result.message).toContain('clientId');
       expect(result.message).toContain('clientSecret');
       expect(result.details).toEqual({ missing: ['tenantId', 'clientId', 'clientSecret'] });
+    });
+
+    it('runs a WhoAmI probe when a token source is provided (v1.1.0)', async () => {
+      const result = await connector.testConnection({
+        orgUrl: 'https://contoso.api.crm.dynamics.com',
+        accessToken: 'test-token',
+      });
+      expect(result.success).toBe(true);
+      expect(result.message).toContain('WhoAmI probe succeeded');
+      expect(result.details).toMatchObject({ probe: { status: 'ok' } });
+    });
+
+    it('skips the WhoAmI probe when no token source exists (v1.1.0)', async () => {
+      const result = await connector.testConnection({
+        orgUrl: 'https://org.api.crm.dynamics.com',
+        tenantId: 'tenant-1',
+        clientId: 'client-1',
+        clientSecret: 'secret-1',
+      });
+      expect(result.success).toBe(true);
+      expect(result.details).toMatchObject({ probe: { status: 'skipped' } });
+    });
+
+    it('reports a failed WhoAmI probe as diagnostics without throwing (v1.1.0)', async () => {
+      const instance = (axios.create as jest.Mock).mock.results[
+        (axios.create as jest.Mock).mock.results.length - 1
+      ].value;
+      instance.get.mockRejectedValueOnce(
+        new ConnectorError('Authentication failed', 'AUTH_FAILED', 'req-1', false),
+      );
+
+      const result = await connector.testConnection({
+        orgUrl: 'https://contoso.api.crm.dynamics.com',
+        accessToken: 'test-token',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('WhoAmI probe failed');
+      expect(result.details).toMatchObject({
+        probe: { status: 'error', code: 'AUTH_FAILED', requestId: 'req-1' },
+      });
+    });
+  });
+
+  describe('OAuth credential wiring (v1.1.0)', () => {
+    const OAUTH_CREDENTIALS = {
+      orgUrl: 'https://contoso.api.crm.dynamics.com',
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      clientSecret: 'secret-1',
+      redirectUri: 'http://localhost:3000/callback',
+      refreshToken: 'refresh-old',
+    };
+
+    /**
+     * Executes an action whose handler drives the lazily-built client's
+     * REQUEST INTERCEPTOR (the mocked axios instance never runs interceptors
+     * itself), proving the token provider output reaches the Authorization
+     * header. Returns the handler's recorded Authorization value.
+     */
+    async function runWithCredentials(
+      credentials: unknown,
+    ): Promise<{ result: ConnectorExecutionResult; authorization: string | undefined }> {
+      let authorization: string | undefined;
+      const spy = jest.fn(async () => {
+        const instance = (axios.create as jest.Mock).mock.results[
+          (axios.create as jest.Mock).mock.results.length - 1
+        ].value;
+        const registrations = instance.interceptors.request.use.mock.calls;
+        const interceptor = registrations[registrations.length - 1][0];
+        const out = await interceptor({ headers: {} });
+        authorization = out.headers.Authorization;
+        return { success: true, data: {} };
+      });
+      connector.registerHandler('dynamics.create_contact', spy);
+
+      const result = await connector.execute({
+        actionId: 'dynamics.create_contact',
+        input: { firstname: 'Jane' },
+        credentials,
+      });
+      return { result, authorization };
+    }
+
+    it('acquires a token via refresh_token and attaches it to the Authorization header', async () => {
+      const { result, authorization } = await runWithCredentials(OAUTH_CREDENTIALS);
+
+      expect(result.success).toBe(true);
+      expect(refreshAccessToken).toHaveBeenCalledTimes(1);
+      expect((refreshAccessToken as jest.Mock).mock.calls[0][0]).toMatchObject({
+        tenantId: 'tenant-1',
+        clientId: 'client-1',
+        clientSecret: 'secret-1',
+        redirectUri: 'http://localhost:3000/callback',
+        refreshToken: 'refresh-old',
+        scope: 'https://contoso.api.crm.dynamics.com/.default',
+      });
+      expect(authorization).toBe('Bearer oauth-access');
+    });
+
+    it('uses the authorization_code grant when a code is supplied', async () => {
+      await runWithCredentials({
+        ...OAUTH_CREDENTIALS,
+        code: 'auth-code-1',
+        refreshToken: undefined,
+      });
+
+      expect(acquireTokenResponse).toHaveBeenCalledTimes(1);
+      expect((acquireTokenResponse as jest.Mock).mock.calls[0][0].code).toBe('auth-code-1');
+      expect(refreshAccessToken).not.toHaveBeenCalled();
+    });
+
+    it('caches the acquired token across executions on the same connector', async () => {
+      await runWithCredentials(OAUTH_CREDENTIALS);
+      const second = await runWithCredentials(OAUTH_CREDENTIALS);
+
+      expect(refreshAccessToken).toHaveBeenCalledTimes(1);
+      expect(second.authorization).toBe('Bearer oauth-access');
+    });
+
+    it('prefers a caller-supplied accessToken and never calls the token endpoint', async () => {
+      const { authorization } = await runWithCredentials({
+        ...OAUTH_CREDENTIALS,
+        accessToken: 'caller-token',
+      });
+
+      expect(acquireTokenResponse).not.toHaveBeenCalled();
+      expect(refreshAccessToken).not.toHaveBeenCalled();
+      expect(authorization).toBe('Bearer caller-token');
+    });
+
+    it('passes tokenUrl through to the auth config when provided', async () => {
+      await runWithCredentials({
+        ...OAUTH_CREDENTIALS,
+        tokenUrl: 'http://127.0.0.1:9999/oauth2/v2.0/token',
+      });
+
+      expect((refreshAccessToken as jest.Mock).mock.calls[0][0].tokenUrl).toBe(
+        'http://127.0.0.1:9999/oauth2/v2.0/token',
+      );
+    });
+
+    it('normalizes missing OAuth fields when no token source exists', async () => {
+      const result = await connector.execute({
+        actionId: 'dynamics.search_contact',
+        input: { query: 'John' },
+        credentials: { orgUrl: 'https://contoso.api.crm.dynamics.com' },
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error as ConnectorError).toMatchObject({ code: 'MISSING_CREDENTIALS' });
     });
   });
 });

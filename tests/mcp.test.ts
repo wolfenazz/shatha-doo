@@ -19,6 +19,7 @@ import type {
 } from '../src/types';
 import {
   createMcpServer,
+  credentialsFromEnv,
   jsonSchemaToZodShape,
   server as sharedServer,
   start as startShared,
@@ -57,7 +58,7 @@ function fakeConnector(execute: DooConnector['execute']): DooConnector {
   return {
     manifest: {
       name: 'dynamics365-connector',
-      version: '1.0.0',
+      version: '1.1.0',
       provider: { name: 'Microsoft Dynamics 365', version: 'v9.2', type: 'Enterprise CRM' },
       auth: { type: 'oauth2', grantTypes: ['authorization_code', 'refresh_token'], scopes: [] },
       actions: fakeActions(),
@@ -176,7 +177,7 @@ describe('mcp/server.ts — thin MCP adapter (T3.1)', () => {
     const info = client.getServerVersion();
     expect(info).toBeDefined();
     expect(info?.name).toBe('dynamics365-connector');
-    expect(info?.version).toBe('1.0.0');
+    expect(info?.version).toBe('1.1.0');
   });
 
   it('S3.1.1: jsonSchemaToZodShape maps required vs optional JSON Schema properties', () => {
@@ -191,5 +192,55 @@ describe('mcp/server.ts — thin MCP adapter (T3.1)', () => {
     // Non-schema input degrades to an empty shape.
     expect(jsonSchemaToZodShape(null)).toEqual({});
     expect(jsonSchemaToZodShape({ type: 'string' })).toEqual({});
+  });
+
+  it('v1.1.0: credentialsFromEnv returns undefined without D365_ORG_URL', () => {
+    expect(credentialsFromEnv({})).toBeUndefined();
+    expect(credentialsFromEnv({ D365_TENANT_ID: 'tenant-1' })).toBeUndefined();
+  });
+
+  it('v1.1.0: credentialsFromEnv maps D365_* variables onto connector credentials', () => {
+    const credentials = credentialsFromEnv({
+      D365_ORG_URL: ' https://contoso.api.crm.dynamics.com ',
+      D365_ACCESS_TOKEN: 'token-1',
+      D365_TENANT_ID: 'tenant-1',
+      D365_CLIENT_ID: 'client-1',
+      D365_CLIENT_SECRET: 'secret-1',
+      D365_REDIRECT_URI: 'http://localhost:3000/callback',
+      D365_REFRESH_TOKEN: 'refresh-1',
+      D365_TOKEN_URL: 'http://127.0.0.1:9999/token',
+      D365_SCOPE: 'scope-1',
+    });
+
+    expect(credentials).toEqual({
+      orgUrl: 'https://contoso.api.crm.dynamics.com',
+      accessToken: 'token-1',
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      clientSecret: 'secret-1',
+      redirectUri: 'http://localhost:3000/callback',
+      refreshToken: 'refresh-1',
+      tokenUrl: 'http://127.0.0.1:9999/token',
+      scope: 'scope-1',
+    });
+  });
+
+  it('v1.1.0: tools/call forwards environment credentials to connector.execute', async () => {
+    process.env.D365_ORG_URL = 'https://contoso.api.crm.dynamics.com';
+    process.env.D365_ACCESS_TOKEN = 'env-token';
+    execute.mockResolvedValue({ success: true, data: { contacts: [], count: 0 } });
+
+    try {
+      await client.callTool({ name: 'dynamics.search_contact', arguments: { query: 'John' } });
+
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute.mock.calls[0][0].credentials).toEqual({
+        orgUrl: 'https://contoso.api.crm.dynamics.com',
+        accessToken: 'env-token',
+      });
+    } finally {
+      delete process.env.D365_ORG_URL;
+      delete process.env.D365_ACCESS_TOKEN;
+    }
   });
 });

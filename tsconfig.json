@@ -14,5 +14,5 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "mcp", "tests"]
+  "include": ["src", "mcp", "tests", "examples", "scripts"]
 }

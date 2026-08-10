@@ -1,5 +1,5 @@
 /**
- * Dynamics 365 connector core (T2.2).
+ * Dynamics 365 connector core (T2.2, hardened in v1.1.0).
  *
  * Implements the DOO connector pattern (skill doc §2.2) over the shared
  * contracts in `./types`:
@@ -8,9 +8,15 @@
  *  - `execute()`        -> routes a request to the matching action handler by
  *                          action id; unknown ids yield a normalized
  *                          `UNKNOWN_ACTION` error.
- *  - `testConnection()` -> validates the credential shape (org URL + either an
- *                          access token or the OAuth client fields) WITHOUT
- *                          side effects; the real WhoAmI probe lands with T2.1.
+ *  - `testConnection()` -> validates the credential shape, then runs a real
+ *                          `WhoAmI()` probe whenever a token source is
+ *                          provided (result reported in `details.probe`).
+ *
+ * OAuth (v1.1.0): the core acquires and refreshes tokens itself via
+ * `src/auth` when the caller supplies the client fields
+ * (`tenantId`/`clientId`/`clientSecret` + `code` or `refreshToken`), caches
+ * them in memory with a skew-safe expiry, and falls back to a caller-supplied
+ * `accessToken`. Tokens are never logged or persisted.
  *
  * Action handlers (T2.3-T2.7) register via `registerHandler()` once the
  * client exposes get/post/patch.
@@ -26,6 +32,8 @@ import {
 import { Dynamics365Client } from './client';
 import { ConnectorError } from './errors';
 import { actionSchemas } from './schemas';
+import { acquireTokenResponse, refreshAccessToken, DEFAULT_SCOPE } from './auth';
+import type { OAuthConfig } from './auth';
 import { searchContactAction, searchContactHandler } from './actions/search-contact';
 import { createContactAction, executeCreateContact } from './actions/create-contact';
 import { updateContactAction, executeUpdateContact } from './actions/update-contact';
@@ -38,6 +46,13 @@ export type ActionHandler = (
   input: unknown,
   credentials?: unknown,
 ) => Promise<ConnectorExecutionResult>;
+
+/** Cached token with a conservative expiry window (skew-safe). */
+interface TokenCacheEntry {
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt: number;
+}
 
 const ACTION_DEFINITIONS: ConnectorAction[] = [
   searchContactAction,
@@ -58,6 +73,7 @@ export class Dynamics365Connector implements DooConnector {
   private client: Dynamics365Client | null = null;
   private actions: Map<string, ConnectorAction>;
   private handlers: Map<string, ActionHandler>;
+  private tokenCache: TokenCacheEntry | null = null;
 
   constructor() {
     this.actions = new Map(ACTION_DEFINITIONS.map((def) => [def.id, withSchemas(def)]));
@@ -70,7 +86,7 @@ export class Dynamics365Connector implements DooConnector {
     this.handlers.set(createTaskAction.id, executeCreateTask);
     this.manifest = {
       name: 'dynamics365-connector',
-      version: '1.0.0',
+      version: '1.1.0',
       description: 'Microsoft Dynamics 365 connector for DOO',
       provider: {
         name: 'Microsoft Dynamics 365',
@@ -101,10 +117,88 @@ export class Dynamics365Connector implements DooConnector {
     this.handlers.set(actionId, handler);
   }
 
+  /** Reads a credential field as a trimmed string (undefined when absent/empty). */
+  private static asString(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+  }
+
+  /** Whether a usable token source exists for these credentials. */
+  private static hasTokenSource(cred: Record<string, unknown>): boolean {
+    return (
+      Dynamics365Connector.asString(cred.accessToken) !== undefined ||
+      Dynamics365Connector.asString(cred.refreshToken) !== undefined ||
+      Dynamics365Connector.asString(cred.code) !== undefined
+    );
+  }
+
+  /**
+   * Builds a token provider that uses the OAuth 2.0 flow (src/auth) when the
+   * caller supplies the client fields, otherwise falls back to a caller
+   * supplied `accessToken`. Tokens are cached per instance and refreshed
+   * before expiry; the rotated refresh token is kept in the cache.
+   */
+  private buildTokenProvider(cred: Record<string, unknown>): () => Promise<string> {
+    const accessToken = Dynamics365Connector.asString(cred.accessToken);
+    if (accessToken !== undefined) {
+      return async () => accessToken;
+    }
+
+    const orgUrl = Dynamics365Connector.asString(cred.orgUrl);
+    const tenantId = Dynamics365Connector.asString(cred.tenantId);
+    const clientId = Dynamics365Connector.asString(cred.clientId);
+    const clientSecret = Dynamics365Connector.asString(cred.clientSecret);
+    const redirectUri = Dynamics365Connector.asString(cred.redirectUri);
+    const scope =
+      Dynamics365Connector.asString(cred.scope) ??
+      (orgUrl !== undefined ? DEFAULT_SCOPE(orgUrl) : undefined);
+
+    if (tenantId === undefined || clientId === undefined || clientSecret === undefined) {
+      throw new ConnectorError(
+        'Missing OAuth client fields (tenantId, clientId, clientSecret) or an accessToken in credentials',
+        'MISSING_CREDENTIALS',
+        undefined,
+        false,
+      );
+    }
+
+    const base: OAuthConfig = {
+      tenantId,
+      clientId,
+      clientSecret,
+      scope: scope ?? '',
+      redirectUri: redirectUri ?? '',
+      ...(Dynamics365Connector.asString(cred.tokenUrl) !== undefined
+        ? { tokenUrl: Dynamics365Connector.asString(cred.tokenUrl) as string }
+        : {}),
+    };
+
+    return async () => {
+      if (this.tokenCache !== null && this.tokenCache.expiresAt > Date.now()) {
+        return this.tokenCache.accessToken;
+      }
+      const refreshToken = this.tokenCache?.refreshToken ?? cred.refreshToken;
+      const response =
+        typeof refreshToken === 'string' && refreshToken.length > 0
+          ? await refreshAccessToken({ ...base, refreshToken })
+          : await acquireTokenResponse({
+              ...base,
+              code: Dynamics365Connector.asString(cred.code),
+            });
+      this.tokenCache = {
+        accessToken: response.accessToken,
+        refreshToken:
+          response.refreshToken ?? (typeof refreshToken === 'string' ? refreshToken : undefined),
+        expiresAt: Date.now() + ((response.expiresIn ?? 3600) - 60) * 1000,
+      };
+      return response.accessToken;
+    };
+  }
+
   /**
    * Lazily builds the Web API client from the request credentials. The client
    * is only constructed once a registered handler actually needs it; the
-   * access token is supplied by the caller (or the auth flow in later tasks).
+   * access token is supplied by the caller (or acquired via OAuth from the
+   * client fields in `src/auth`).
    */
   private getClient(credentials?: unknown): Dynamics365Client {
     if (this.client) {
@@ -121,18 +215,7 @@ export class Dynamics365Connector implements DooConnector {
     }
     this.client = new Dynamics365Client({
       orgUrl: cred.orgUrl,
-      getAccessToken: async () => {
-        const token = typeof cred.accessToken === 'string' ? cred.accessToken : '';
-        if (token.length === 0) {
-          throw new ConnectorError(
-            'No access token available - authenticate first',
-            'NO_ACCESS_TOKEN',
-            undefined,
-            false,
-          );
-        }
-        return token;
-      },
+      getAccessToken: this.buildTokenProvider(cred),
     });
     return this.client;
   }
@@ -142,7 +225,6 @@ export class Dynamics365Connector implements DooConnector {
   }
 
   async testConnection(credentials: unknown): Promise<ConnectionTestResult> {
-    // TODO(T2.1+): probe the Web API (WhoAmI) via the client for full verification.
     if (credentials === null || typeof credentials !== 'object' || Array.isArray(credentials)) {
       return { success: false, message: 'Invalid credentials: expected an object' };
     }
@@ -166,7 +248,43 @@ export class Dynamics365Connector implements DooConnector {
         details: { missing },
       };
     }
-    return { success: true, message: 'Credential shape is valid' };
+    return this.probeConnection(cred);
+  }
+
+  /**
+   * Verifies the credentials against the live Web API via the `WhoAmI()`
+   * function (side-effect free) whenever a token source is available. The
+   * probe result is reported in `details.probe` and never throws — a failed
+   * probe is a diagnostic, not a credential-shape failure.
+   */
+  private async probeConnection(cred: Record<string, unknown>): Promise<ConnectionTestResult> {
+    if (!Dynamics365Connector.hasTokenSource(cred)) {
+      return {
+        success: true,
+        message: 'Credential shape is valid (WhoAmI probe skipped - no token source provided)',
+        details: { probe: { status: 'skipped' } },
+      };
+    }
+    try {
+      const who = await this.getClient(cred).whoAmI();
+      return {
+        success: true,
+        message: 'Credential shape is valid; WhoAmI probe succeeded',
+        details: {
+          probe: { status: 'ok', userId: who.UserId, organizationId: who.OrganizationId },
+        },
+      };
+    } catch (error) {
+      const normalized =
+        error instanceof ConnectorError ? error : new ConnectorError(String(error), 'PROBE_FAILED');
+      return {
+        success: false,
+        message: `WhoAmI probe failed: ${normalized.message}`,
+        details: {
+          probe: { status: 'error', code: normalized.code, requestId: normalized.requestId },
+        },
+      };
+    }
   }
 
   async execute(request: ConnectorExecutionRequest): Promise<ConnectorExecutionResult> {

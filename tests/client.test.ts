@@ -8,6 +8,7 @@
  */
 import axios from 'axios';
 import { Dynamics365Client } from '../src/client';
+import { ConnectorError } from '../src/errors';
 import { mockWhoAmIResponse } from './fixtures/responses';
 
 jest.mock('axios', () => {
@@ -270,6 +271,102 @@ describe('src/client - Dynamics365Client', () => {
 
       expect(inst.get).toHaveBeenCalledWith('WhoAmI()', undefined);
       expect(result).toEqual(mockWhoAmIResponse);
+    });
+  });
+
+  describe('retry with backoff (v1.1.0)', () => {
+    const retryableError = (retryAfterMs = 0): ConnectorError =>
+      new ConnectorError(
+        'Rate limit exceeded',
+        'RATE_LIMIT_EXCEEDED',
+        'req-1',
+        true,
+        undefined,
+        retryAfterMs,
+      );
+
+    it('retries a retryable failure and succeeds on the next attempt', async () => {
+      const client = new Dynamics365Client({
+        ...baseConfig,
+        maxRetries: 2,
+        retryBaseDelayMs: 1,
+      });
+      const inst = lastInstance();
+      inst.get
+        .mockRejectedValueOnce(retryableError())
+        .mockResolvedValueOnce({ data: { value: [] } });
+
+      const result = await client.get<{ value: unknown[] }>('contacts', { $top: 10 });
+
+      expect(inst.get).toHaveBeenCalledTimes(2);
+      expect(result).toEqual({ value: [] });
+    });
+
+    it('honors Retry-After (retryAfterMs) over the exponential backoff', async () => {
+      const started = Date.now();
+      const client = new Dynamics365Client({
+        ...baseConfig,
+        maxRetries: 1,
+        retryBaseDelayMs: 10_000,
+        retryMaxDelayMs: 30_000,
+      });
+      const inst = lastInstance();
+      inst.get
+        .mockRejectedValueOnce(retryableError(0))
+        .mockResolvedValueOnce({ data: { value: [] } });
+
+      await client.get('contacts');
+
+      expect(Date.now() - started).toBeLessThan(1_000);
+      expect(inst.get).toHaveBeenCalledTimes(2);
+    });
+
+    it('gives up after maxRetries and throws the normalized error', async () => {
+      const client = new Dynamics365Client({
+        ...baseConfig,
+        maxRetries: 1,
+        retryBaseDelayMs: 1,
+      });
+      const inst = lastInstance();
+      inst.get.mockRejectedValue(retryableError());
+
+      await expect(client.get('contacts')).rejects.toMatchObject({
+        code: 'RATE_LIMIT_EXCEEDED',
+        retryable: true,
+      });
+      expect(inst.get).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not retry non-retryable errors', async () => {
+      const client = new Dynamics365Client({ ...baseConfig, maxRetries: 2, retryBaseDelayMs: 1 });
+      const inst = lastInstance();
+      inst.get.mockRejectedValue(
+        new ConnectorError('Authentication failed', 'AUTH_FAILED', 'req-1', false),
+      );
+
+      await expect(client.get('contacts')).rejects.toMatchObject({ code: 'AUTH_FAILED' });
+      expect(inst.get).toHaveBeenCalledTimes(1);
+    });
+
+    it('normalizes raw network failures before classification and retries them', async () => {
+      const client = new Dynamics365Client({
+        ...baseConfig,
+        maxRetries: 1,
+        retryBaseDelayMs: 1,
+      });
+      const inst = lastInstance();
+      inst.get
+        .mockRejectedValueOnce({
+          code: 'ERR_NETWORK',
+          message: 'Network Error',
+          isAxiosError: true,
+        })
+        .mockResolvedValueOnce({ data: { value: [] } });
+
+      const result = await client.get<{ value: unknown[] }>('contacts');
+
+      expect(inst.get).toHaveBeenCalledTimes(2);
+      expect(result).toEqual({ value: [] });
     });
   });
 });

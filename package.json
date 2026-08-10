@@ -1,6 +1,6 @@
 {
   "name": "dynamics365-connector",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Microsoft Dynamics 365 connector for DOO Builders League",
   "private": true,
   "type": "commonjs",
@@ -10,10 +10,12 @@
     "dev": "tsc --watch",
     "test": "jest",
     "test:coverage": "jest --coverage",
-    "lint": "eslint \"src/**/*.ts\" \"mcp/**/*.ts\" \"tests/**/*.ts\"",
-    "format": "prettier --write \"src/**/*.ts\" \"mcp/**/*.ts\" \"tests/**/*.ts\"",
+    "test:integration": "jest tests/integration.test.ts --runInBand",
+    "lint": "eslint \"src/**/*.ts\" \"mcp/**/*.ts\" \"tests/**/*.ts\" \"examples/**/*.ts\" \"scripts/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"mcp/**/*.ts\" \"tests/**/*.ts\" \"examples/**/*.ts\" \"scripts/**/*.ts\"",
     "mcp": "node dist/mcp/server.js",
     "mcp:http": "node dist/mcp/http-server.js",
+    "demo": "npm run build && node dist/scripts/demo.js",
     "start": "node dist/mcp/http-server.js",
     "typecheck": "tsc --noEmit"
   },

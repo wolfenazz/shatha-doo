@@ -73,32 +73,41 @@ Your mission is to build a **production-oriented connector** for Microsoft Dynam
 
 ```
 dynamics365-connector/
-├── connector.yaml              # Manifest file
+├── docs/
+│   ├── connector.yaml              # Manifest file
+│   ├── openapi.yaml                # OpenAPI 3.1.x specification
+│   ├── SUBMISSION.md               # Submission note (live-validation blocker)
+│   └── ...                         # Research, handoff, changelog, mission todo
 ├── src/
-│   ├── connector.ts            # Main connector implementation
-│   ├── client.ts               # Dynamics 365 API client
+│   ├── connector.ts                # Main connector implementation (OAuth-wired core)
+│   ├── client.ts                   # Dynamics 365 API client (+ retry with backoff)
 │   ├── auth/
-│   │   └── index.ts            # Authentication (OAuth 2.0)
+│   │   └── index.ts                # Authentication (OAuth 2.0, code + refresh)
 │   ├── actions/
-│   │   ├── search-contact.ts   # dynamics.search_contact
-│   │   ├── create-contact.ts   # dynamics.create_contact
-│   │   ├── update-contact.ts   # dynamics.update_contact
-│   │   ├── create-lead.ts      # dynamics.create_lead
-│   │   └── create-task.ts      # dynamics.create_task
+│   │   ├── search-contact.ts       # dynamics.search_contact
+│   │   ├── create-contact.ts       # dynamics.create_contact
+│   │   ├── update-contact.ts       # dynamics.update_contact
+│   │   ├── create-lead.ts          # dynamics.create_lead
+│   │   └── create-task.ts          # dynamics.create_task
 │   ├── schemas/
-│   │   └── index.ts            # JSON Schema definitions
+│   │   └── index.ts                # JSON Schema definitions
 │   └── errors/
-│       └── index.ts            # Normalized error handling
+│       └── index.ts                # Normalized error handling
 ├── mcp/
-│   └── server.ts               # Thin MCP adapter
+│   ├── server.ts                   # Thin MCP adapter (+ env credentials)
+│   └── http-server.ts              # Streamable HTTP transport (deployment)
 ├── tests/
-│   ├── connector.test.ts       # Unit tests
-│   └── fixtures/               # Test fixtures
+│   ├── sandbox/                    # Mock Dynamics 365 sandbox (offline proof)
+│   ├── integration.test.ts         # Real connector vs sandbox over HTTP
+│   ├── *.test.ts                   # Unit tests
+│   └── fixtures/                   # Test fixtures
+├── scripts/
+│   └── demo.ts                     # Offline end-to-end demo (npm run demo)
 ├── examples/
-│   └── ...                     # Usage examples
-├── openapi.yaml                # OpenAPI 3.1.x specification
-├── .env.example                # Environment variables template
-└── README.md                   # Documentation
+│   └── ...                         # Usage examples
+├── .github/workflows/ci.yml        # CI pipeline
+├── .env.example                    # Environment variables template
+└── README.md                       # Documentation
 ```
 
 ---

@@ -1,9 +1,9 @@
 # Mission: Microsoft Dynamics 365 Connector
 
 **Builder:** Shatha Ebrahem
-**Status:** IN_PROGRESS
+**Status:** COMPLETED (v1.1.0 · live sandbox validation pending tenant availability)
 **Start Date:** 2026-08-04
-**Target:** v1.0.0
+**Target:** v1.0.0 · **Reached:** v1.1.0
 
 ---
 
@@ -193,6 +193,45 @@
 
 ---
 
+## M6: Hardening, CI & Offline Verification (v1.1.0) | status: completed | depends:M5
+
+> Shipped 2026-08-10 as release tag `v1.1.0`. Live sandbox validation remains
+> blocked on the availability of a Microsoft 365 tenant + Azure AD (see
+> `docs/SUBMISSION.md`); the full stack is now proven offline against the
+> bundled mock sandbox (`npm run demo`).
+
+### T6.1: OAuth Integration
+- [x] S6.1.1: Wire OAuth into the connector core | verified: src/connector.ts buildTokenProvider — authorization_code + refresh_token grants via src/auth, in-memory token cache with skew-safe expiry, accessToken fast path; connector tests mock src/auth (6 new cases)
+- [x] S6.1.2: Implement real WhoAmI probe in testConnection | verified: probeConnection() — runs WhoAmI() when a token source exists, reports status ok/error/skipped in details.probe, never throws (3 new connector tests)
+- [x] S6.1.3: Add tokenUrl override for offline OAuth | verified: src/auth OAuthConfig.tokenUrl + connector pass-through + mcp D365_TOKEN_URL mapping (auth test + connector test + integration)
+
+### T6.2: Retry & Reliability
+- [x] S6.2.1: Add retry with exponential backoff | verified: src/client.ts withRetry — retries retryable ConnectorErrors (429/5xx/network), honors Retry-After, caps backoff, configurable maxRetries (default 2)
+- [x] S6.2.2: Add retryAfterMs to ConnectorError | verified: src/errors extractRetryAfterMs from Retry-After header (numeric seconds + HTTP date), unit-tested
+- [x] S6.2.3: Cover retry paths in unit tests | verified: tests/client.test.ts 5 new retry cases (succeed-on-retry, Retry-After override, give-up, no-retry on 401, raw network normalization)
+
+### T6.3: Auth Test Suite
+- [x] S6.3.1: Write tests/auth.test.ts | verified: 12 tests — grants, token mapping, tokenUrl override, status-only error security, URL/scope helpers (PASS)
+
+### T6.4: CI & Quality Gates
+- [x] S6.4.1: Add GitHub Actions CI | verified: .github/workflows/ci.yml — Node 18/20/22 matrix: typecheck, lint, prettier check, build, tests (--runInBand --coverage), npm audit, secret scan
+- [x] S6.4.2: Add coverage thresholds | verified: jest.config.js ≥80% statements/lines/functions, ≥70% branches; actual 92.35% stmts / 82.22% branches
+- [x] S6.4.3: Build examples + scripts | verified: tsconfig includes examples/scripts — dist/examples/*.js now exist (README commands work)
+
+### T6.5: Mock Sandbox & Integration (offline proof)
+- [x] S6.5.1: Build the mock Dynamics 365 sandbox | verified: tests/sandbox/dynamics-sandbox.ts — OAuth token endpoint (code + refresh grants), WhoAmI(), OData list/create/patch with contains filters, pagination nextLink, x-ms-request-id + rate-limit headers, failure injection (__fail_status/__fail_attempts/__fail_retry_after)
+- [x] S6.5.2: Write the integration suite | verified: tests/integration.test.ts 9/9 PASS — real connector + MCP over real HTTP: auth-code flow, refresh flow, WhoAmI probe, all five actions, pagination, 429 retry (success + give-up), 401/404 normalization, MCP tools/call
+- [x] S6.5.3: Add the offline demo | verified: scripts/demo.ts + npm run demo — sandbox + testConnection + MCP initialize/tools/list + all 5 tools through the real MCP protocol; 7/7 checks PASS, EXIT=0
+
+### T6.6: MCP Environment Credentials
+- [x] S6.6.1: Load credentials from the environment in the MCP adapter | verified: mcp/server.ts credentialsFromEnv() maps D365_* vars; tools/call forwards them (mcp.test.ts 3 new cases incl. env forwarding)
+
+### T6.7: Submission & Docs
+- [x] S6.7.1: Write the submission note | verified: docs/SUBMISSION.md — paste-ready blocker statement ("no Microsoft 365 tenant / Azure AD available"), evidence table, unblock steps
+- [x] S6.7.2: Update docs for v1.1.0 | verified: CHANGELOG [1.1.0], README (structure/demo/blocker), FINAL-STEPS status, HANDOFF v1.1.0, requirements.md tree, connector.yaml version, .env.example (+D365_REFRESH_TOKEN/D365_AUTH_CODE/D365_SCOPE/D365_TOKEN_URL)
+
+---
+
 ## Progress Summary
 
 | Milestone | Status | Tasks |
@@ -202,4 +241,5 @@
 | M3: MCP Adapter & Testing | COMPLETED | 17 |
 | M4: Documentation & OpenAPI | COMPLETED | 14 |
 | M5: Final Validation & Release | COMPLETED | 19 |
-| **TOTAL** | - | **94** |
+| M6: Hardening, CI & Offline Verification | COMPLETED | 15 |
+| **TOTAL** | - | **109** |
