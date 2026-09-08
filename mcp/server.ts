@@ -28,6 +28,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { Dynamics365Connector } from '../src/connector';
 import { ConnectorError } from '../src/errors';
+import { jsonSchemaToZod } from '../src/schema-validation';
 import type { DooConnector } from '../src/types';
 
 /**
@@ -62,25 +63,6 @@ export function credentialsFromEnv(
   return credentials;
 }
 
-/** Maps a JSON Schema property `type` to a Zod type (thin type translation). */
-function zodForType(type: unknown): z.ZodTypeAny {
-  switch (type) {
-    case 'string':
-      return z.string();
-    case 'integer':
-    case 'number':
-      return z.number();
-    case 'boolean':
-      return z.boolean();
-    case 'array':
-      return z.array(z.unknown());
-    case 'object':
-      return z.record(z.string(), z.unknown());
-    default:
-      return z.unknown();
-  }
-}
-
 /**
  * Converts a JSON Schema (2020-12) object's `properties` into a Zod raw shape
  * accepted by `McpServer.registerTool`. Non-`required` fields become optional.
@@ -99,11 +81,27 @@ export function jsonSchemaToZodShape(schema: unknown): Record<string, z.ZodTypeA
   );
   const shape: Record<string, z.ZodTypeAny> = {};
   for (const [key, prop] of Object.entries(properties)) {
-    const propObj = (prop ?? {}) as { type?: unknown };
-    const zod = zodForType(propObj.type);
-    shape[key] = required.has(key) ? zod : zod.optional();
+    const converted = jsonSchemaToZod(prop, schema);
+    shape[key] = required.has(key) ? converted : converted.optional();
   }
   return shape;
+}
+
+function mcpInputSchema(action: ReturnType<DooConnector['listActions']>[number]): z.ZodTypeAny {
+  if (action.type !== 'write') return jsonSchemaToZod(action.inputSchema);
+  const schema = action.inputSchema as Record<string, unknown>;
+  return jsonSchemaToZod({
+    ...schema,
+    properties: {
+      ...((schema.properties as Record<string, unknown> | undefined) ?? {}),
+      _approvalToken: {
+        type: 'string',
+        minLength: 1,
+        description: 'One-time approval token issued by the trusted connector host.',
+      },
+    },
+    required: [...((schema.required as string[] | undefined) ?? []), '_approvalToken'],
+  });
 }
 
 /** Formats a failure as `[code] message` so the ConnectorError is visible to MCP clients. */
@@ -120,22 +118,40 @@ function formatError(error: unknown): string {
 /** Registers every connector action as an MCP tool on `server`. */
 export function registerAllTools(server: McpServer, connector: DooConnector): void {
   for (const action of connector.listActions()) {
-    const inputSchema = jsonSchemaToZodShape(action.inputSchema);
+    const inputSchema = mcpInputSchema(action);
+    const outputSchema =
+      action.outputSchema === undefined ? undefined : jsonSchemaToZod(action.outputSchema);
     server.registerTool(
       action.id,
       {
         description: action.description,
-        ...(Object.keys(inputSchema).length > 0 ? { inputSchema } : {}),
+        inputSchema,
+        ...(outputSchema ? { outputSchema } : {}),
+        annotations: {
+          readOnlyHint: action.type === 'read',
+          destructiveHint: action.type === 'write',
+          idempotentHint: action.id === 'dynamics.update_contact',
+        },
       },
       async (args) => {
         try {
+          const rawArgs = (args ?? {}) as Record<string, unknown>;
+          const { _approvalToken, ...input } = rawArgs;
           const result = await connector.execute({
             actionId: action.id,
-            input: args ?? {},
+            input,
             credentials: credentialsFromEnv(),
+            ...(action.type === 'write' ? { metadata: { approvalToken: _approvalToken } } : {}),
           });
           if (result.success) {
-            return { content: [{ type: 'text', text: JSON.stringify(result.data ?? null) }] };
+            const structuredContent =
+              result.data !== null && typeof result.data === 'object' && !Array.isArray(result.data)
+                ? (result.data as Record<string, unknown>)
+                : undefined;
+            return {
+              content: [{ type: 'text', text: JSON.stringify(result.data ?? null) }],
+              ...(structuredContent ? { structuredContent } : {}),
+            };
           }
           return { content: [{ type: 'text', text: formatError(result.error) }], isError: true };
         } catch (error) {

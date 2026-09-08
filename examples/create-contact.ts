@@ -28,9 +28,9 @@ async function main(): Promise<void> {
       companyname: 'Example Corp',
     },
     metadata: {
-      approval: 'required',
+      approvalToken: process.env.D365_WRITE_APPROVAL_TOKEN,
       requestId: 'example-create-contact-001',
-      // Idempotency: retry-safe only if the caller passes the same payload.
+      // Creates are never automatically retried because the provider may have committed.
       retry: { idempotent: false },
     },
   });

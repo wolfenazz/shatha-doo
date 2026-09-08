@@ -21,6 +21,7 @@
  */
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { ConnectorError, normalizeDynamicsError } from './errors';
+import { validateOrgUrl } from './security';
 
 /** Configuration for the Dynamics 365 Web API client. */
 export interface Dynamics365ClientConfig {
@@ -42,6 +43,8 @@ export interface Dynamics365ClientConfig {
   retryBaseDelayMs?: number;
   /** Cap on the backoff delay in ms, defaults to 4_000. */
   retryMaxDelayMs?: number;
+  /** Test-only escape hatch for a loopback mock organization. */
+  allowLocalhost?: boolean;
 }
 
 /** `WhoAmI()` function response (research §2.6) — proves a valid scoped token. */
@@ -58,6 +61,20 @@ export interface PostOptions {
   preferReturn?: boolean;
 }
 
+export interface ResponseMetadata {
+  requestId?: string;
+  retryAfterMs?: number;
+  rateLimit?: {
+    remainingRequests?: number;
+    remainingTime?: string;
+  };
+}
+
+export interface ClientResponse<T> {
+  data: T;
+  metadata: ResponseMetadata;
+}
+
 /** Strips a trailing slash so `baseURL` never ends with a double slash. */
 function trimTrailingSlash(url: string): string {
   return url.replace(/\/+$/, '');
@@ -65,6 +82,8 @@ function trimTrailingSlash(url: string): string {
 
 export class Dynamics365Client {
   private readonly http: AxiosInstance;
+  private readonly baseOrigin: string;
+  private readonly apiPathPrefix: string;
   private readonly maxRetries: number;
   private readonly retryBaseDelayMs: number;
   private readonly retryMaxDelayMs: number;
@@ -82,11 +101,18 @@ export class Dynamics365Client {
     this.retryMaxDelayMs = config.retryMaxDelayMs ?? 4_000;
 
     const apiVersion = config.apiVersion ?? 'v9.2';
-    const baseURL = `${trimTrailingSlash(config.orgUrl)}/api/data/${apiVersion}/`;
+    const orgUrl = validateOrgUrl(
+      config.orgUrl,
+      config.allowLocalhost === true || process.env.NODE_ENV === 'test',
+    );
+    const baseURL = `${trimTrailingSlash(orgUrl)}/api/data/${apiVersion}/`;
+    this.baseOrigin = new URL(baseURL).origin;
+    this.apiPathPrefix = `/api/data/${apiVersion}/`;
 
     this.http = axios.create({
       baseURL,
       timeout: config.timeoutMs ?? 30_000,
+      maxRedirects: 0,
       headers: {
         Accept: 'application/json',
         'OData-MaxVersion': '4.0',
@@ -118,14 +144,29 @@ export class Dynamics365Client {
    * `retryMaxDelayMs`; otherwise the backoff is `base * 2^attempt`. Retried
    * calls are jitter-free by design (deterministic tests, predictable load).
    */
-  private async withRetry<T>(fn: () => Promise<AxiosResponse<T>>): Promise<T> {
+  private async withRetry<T>(
+    fn: () => Promise<AxiosResponse<T>>,
+    retryAllowed: boolean,
+  ): Promise<AxiosResponse<T>> {
     let attempt = 0;
     for (;;) {
       try {
-        const { data } = await fn();
-        return data;
+        return await fn();
       } catch (error) {
         const normalized = error instanceof ConnectorError ? error : normalizeDynamicsError(error);
+        if (!retryAllowed) {
+          if (normalized.retryable) {
+            throw new ConnectorError(
+              normalized.message,
+              normalized.code,
+              normalized.requestId,
+              false,
+              normalized.providerError,
+              normalized.retryAfterMs,
+            );
+          }
+          throw normalized;
+        }
         if (!normalized.retryable || attempt >= this.maxRetries) {
           throw normalized;
         }
@@ -141,7 +182,36 @@ export class Dynamics365Client {
 
   /** GET a resource; `params` carries OData query options ($filter/$select/$top/...). */
   async get<T>(path: string, params?: Record<string, unknown>): Promise<T> {
-    return this.withRetry(() => this.http.get<T>(path, params ? { params } : undefined));
+    return (await this.getWithMetadata<T>(path, params)).data;
+  }
+
+  /** GET a resource and preserve provider request/rate-limit response headers. */
+  async getWithMetadata<T>(
+    path: string,
+    params?: Record<string, unknown>,
+  ): Promise<ClientResponse<T>> {
+    const response = await this.withRetry(
+      () => this.http.get<T>(path, params ? { params } : undefined),
+      true,
+    );
+    return { data: response.data, metadata: this.responseMetadata(response) };
+  }
+
+  /** Follow an OData nextLink only when it remains on this client's API origin/version. */
+  async getNextPage<T>(nextLink: string): Promise<ClientResponse<T>> {
+    let parsed: URL;
+    try {
+      parsed = new URL(nextLink, this.baseOrigin);
+    } catch {
+      throw new ConnectorError('nextLink must be a valid URL reference', 'INVALID_NEXT_LINK');
+    }
+    if (parsed.origin !== this.baseOrigin || !parsed.pathname.startsWith(this.apiPathPrefix)) {
+      throw new ConnectorError(
+        'nextLink must target the configured Dynamics organization and API version',
+        'INVALID_NEXT_LINK',
+      );
+    }
+    return this.getWithMetadata<T>(parsed.toString());
   }
 
   /** POST a new entity; use `preferReturn` to receive the created record body. */
@@ -149,21 +219,54 @@ export class Dynamics365Client {
     const requestConfig: AxiosRequestConfig | undefined = options?.preferReturn
       ? { headers: { Prefer: 'return=representation' } }
       : undefined;
-    return this.withRetry(() => this.http.post<T>(path, body, requestConfig));
+    const response = await this.withRetry(
+      () => this.http.post<T>(path, body, requestConfig),
+      false,
+    );
+    return response.data;
   }
 
   /** PATCH an existing entity (`contacts(<contactid>)`); returns 204 by default. */
   async patch<T>(path: string, body: unknown): Promise<T> {
-    return this.withRetry(() => this.http.patch<T>(path, body));
+    const response = await this.withRetry(() => this.http.patch<T>(path, body), true);
+    return response.data;
   }
 
   /** DELETE an entity. */
   async delete(path: string): Promise<void> {
-    await this.withRetry(() => this.http.delete(path));
+    await this.withRetry(() => this.http.delete(path), false);
   }
 
   /** Lightweight, side-effect-free connection check (research §2.6). */
   async whoAmI(): Promise<WhoAmIResponse> {
     return this.get<WhoAmIResponse>('WhoAmI()');
+  }
+
+  private responseMetadata(response: AxiosResponse<unknown>): ResponseMetadata {
+    const readHeader = (name: string): string | undefined => {
+      const headers = response.headers as unknown as
+        (Record<string, unknown> & { get?: (key: string) => unknown }) | undefined;
+      if (!headers) return undefined;
+      const value =
+        (typeof headers.get === 'function' ? headers.get(name) : undefined) ??
+        Object.entries(headers).find(([key]) => key.toLowerCase() === name)?.[1];
+      return typeof value === 'string' || typeof value === 'number' ? String(value) : undefined;
+    };
+    const remaining = Number(readHeader('x-ms-ratelimit-burst-remaining-xrm-requests'));
+    const retryAfter = Number(readHeader('retry-after'));
+    const remainingTime = readHeader('x-ms-ratelimit-time-remaining-xrm-requests');
+    const requestId = readHeader('x-ms-request-id');
+    return {
+      ...(requestId ? { requestId } : {}),
+      ...(Number.isFinite(retryAfter) ? { retryAfterMs: retryAfter * 1000 } : {}),
+      ...(Number.isFinite(remaining) || remainingTime
+        ? {
+            rateLimit: {
+              ...(Number.isFinite(remaining) ? { remainingRequests: remaining } : {}),
+              ...(remainingTime ? { remainingTime } : {}),
+            },
+          }
+        : {}),
+    };
   }
 }

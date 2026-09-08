@@ -15,6 +15,7 @@
  *   token data or response bodies.
  */
 import axios from 'axios';
+import { validateTokenUrl } from '../security';
 
 /** OAuth 2.0 client configuration for the Dynamics 365 / Dataverse Web API. */
 export interface OAuthConfig {
@@ -34,6 +35,8 @@ export interface OAuthConfig {
    * point OAuth traffic at a local token server.
    */
   tokenUrl?: string;
+  /** Test-only escape hatch for a loopback mock token endpoint. */
+  allowLocalhost?: boolean;
   /** Authorization code from the authorize endpoint (authorization_code grant). */
   code?: string;
   /** Refresh token (refresh_token grant). Treat like a password. */
@@ -152,13 +155,14 @@ async function requestToken(
 
   let response;
   try {
-    response = await axios.post<TokenEndpointResponse>(
+    const tokenUrl = validateTokenUrl(
       config.tokenUrl ?? TOKEN_URL(config.tenantId),
-      body.toString(),
-      {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      },
+      config.allowLocalhost === true || process.env.NODE_ENV === 'test',
     );
+    response = await axios.post<TokenEndpointResponse>(tokenUrl, body.toString(), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      maxRedirects: 0,
+    });
   } catch (error) {
     const status = httpStatus(error);
     throw new Error(

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — security review remediation
+
+- Enforce server-validated approval tokens before every write action.
+- Disable automatic retry and retryable guidance for POST creates and DELETE requests.
+- Require HTTP MCP bearer authentication, restrict CORS, and rate-limit callers.
+- Use request-scoped provider clients and credential-identity-keyed OAuth token caching.
+- Reject untrusted provider/token destinations and cross-origin pagination links.
+- Preserve JSON Schema constraints in MCP and core runtime validation; expose output schemas.
+- Require a usable token source for `testConnection` and always run `WhoAmI()` on success.
+- Preserve observed provider rate-limit headers and support safe next-page consumption.
+- Synchronize OpenAPI version 1.1.0, add an MIT license, notices, and clean dependency overrides.
+
 All notable changes to the **dynamics365-connector** project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/).

@@ -8,7 +8,7 @@
 openapi: 3.1.0
 info:
   title: Dynamics 365 Connector API
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     Microsoft Dynamics 365 connector for DOO (Builders League). Exposes five
     typed actions over the Dynamics 365 Web API v9.2 (OData). Write actions

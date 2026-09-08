@@ -26,7 +26,8 @@ const DEFAULT_TOP = 10;
 
 /** Input for `dynamics.search_contact` (mirrors `searchContactInputSchema`). */
 export interface SearchContactInput {
-  query: string;
+  query?: string;
+  nextLink?: string;
   filter?: string;
   top?: number;
   select?: string[];
@@ -62,9 +63,13 @@ function parseSearchInput(input: unknown): SearchContactInput {
   const value = input as Record<string, unknown>;
 
   const query = value.query;
-  if (typeof query !== 'string' || query.trim().length === 0) {
+  const nextLink = value.nextLink;
+  if (
+    (typeof query !== 'string' || query.trim().length === 0) &&
+    (typeof nextLink !== 'string' || nextLink.trim().length === 0)
+  ) {
     throw new ConnectorError(
-      'search_contact: "query" is required (search term for the contact full name)',
+      'search_contact: either "query" or "nextLink" is required',
       'VALIDATION_ERROR',
     );
   }
@@ -105,7 +110,13 @@ function parseSearchInput(input: unknown): SearchContactInput {
     filter = value.filter;
   }
 
-  return { query, top, select, filter };
+  return {
+    ...(typeof query === 'string' ? { query } : {}),
+    ...(typeof nextLink === 'string' ? { nextLink } : {}),
+    top,
+    select,
+    filter,
+  };
 }
 
 /** Action definition for `dynamics.search_contact`. */
@@ -136,9 +147,25 @@ export async function executeSearchContact(
   client: Dynamics365Client,
   input: unknown,
 ): Promise<ConnectorExecutionResult> {
-  const { query, top, select, filter } = parseSearchInput(input);
+  const { query, nextLink: requestedNextLink, top, select, filter } = parseSearchInput(input);
 
-  const filterParts = [`contains(fullname,'${escapeODataLiteral(query)}')`];
+  if (requestedNextLink) {
+    const page = await client.getNextPage<ODataListResponse<ContactRecord>>(requestedNextLink);
+    const contacts = Array.isArray(page.data.value) ? page.data.value : [];
+    const nextLink = page.data['@odata.nextLink'];
+    return {
+      success: true,
+      data: { contacts, count: contacts.length, nextLink },
+      metadata: {
+        actionId: searchContactAction.id,
+        pagination: { returned: contacts.length, hasNextPage: Boolean(nextLink) },
+        rateLimit: page.metadata.rateLimit ?? { observed: false },
+        ...page.metadata,
+      },
+    };
+  }
+
+  const filterParts = [`contains(fullname,'${escapeODataLiteral(query as string)}')`];
   if (filter) {
     filterParts.push(filter);
   }
@@ -147,9 +174,15 @@ export async function executeSearchContact(
     params.$select = select.join(',');
   }
 
-  const response = await client.get<ODataListResponse<ContactRecord>>('/contacts', params);
-  const contacts = Array.isArray(response.value) ? response.value : [];
-  const nextLink = response['@odata.nextLink'];
+  const response =
+    typeof client.getWithMetadata === 'function'
+      ? await client.getWithMetadata<ODataListResponse<ContactRecord>>('/contacts', params)
+      : {
+          data: await client.get<ODataListResponse<ContactRecord>>('/contacts', params),
+          metadata: {},
+        };
+  const contacts = Array.isArray(response.data.value) ? response.data.value : [];
+  const nextLink = response.data['@odata.nextLink'];
 
   return {
     success: true,
@@ -161,7 +194,8 @@ export async function executeSearchContact(
         returned: contacts.length,
         hasNextPage: typeof nextLink === 'string' && nextLink.length > 0,
       },
-      rateLimit: { policy: '~60 requests/min per user; exponential backoff on 429' },
+      rateLimit: response.metadata.rateLimit ?? { observed: false },
+      ...response.metadata,
     },
   };
 }

@@ -28,7 +28,7 @@ async function main(): Promise<void> {
       subject: 'Interested in services',
     },
     metadata: {
-      approval: 'required',
+      approvalToken: process.env.D365_WRITE_APPROVAL_TOKEN,
       requestId: 'example-create-lead-001',
       retry: { idempotent: false },
     },

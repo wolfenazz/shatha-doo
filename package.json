@@ -3,6 +3,7 @@
   "version": "1.1.0",
   "description": "Microsoft Dynamics 365 connector for DOO Builders League",
   "private": true,
+  "license": "MIT",
   "type": "commonjs",
   "main": "dist/src/connector.js",
   "scripts": {
@@ -40,5 +41,9 @@
     "prettier": "^3.3.3",
     "ts-jest": "^29.2.5",
     "typescript": "^5.6.2"
+  },
+  "overrides": {
+    "fast-uri": "^3.1.6",
+    "qs": "^6.16.0"
   }
 }

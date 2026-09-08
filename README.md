@@ -131,6 +131,9 @@ D365_CLIENT_SECRET=<azure-app-client-secret>
 D365_REDIRECT_URI=http://localhost:3000/callback
 D365_API_VERSION=v9.2        # optional
 D365_LOG_LEVEL=info          # optional
+D365_WRITE_APPROVAL_TOKEN=<random-write-approval-secret>
+MCP_API_KEY=<random-http-api-key>
+MCP_ALLOWED_ORIGINS=https://trusted-client.example.com
 ```
 
 **Azure app registration** needs these delegated permissions (see
@@ -164,6 +167,15 @@ const result = await connector.execute({
     orgUrl: 'https://<org>.api.crm.dynamics.com',
     accessToken: '<token>', // or OAuth client fields; token from src/auth
   },
+});
+
+// Consequential writes additionally require a token issued by the trusted
+// approval host after the user approves that exact operation:
+await connector.execute({
+  actionId: 'dynamics.create_contact',
+  input: { firstname: 'Jane' },
+  credentials: { orgUrl: 'https://<org>.api.crm.dynamics.com', accessToken: '<token>' },
+  metadata: { approvalToken: process.env.D365_WRITE_APPROVAL_TOKEN },
 });
 
 if (result.success) {
@@ -214,6 +226,8 @@ Both expose all five actions as MCP tools (`dynamics.search_contact`, ...) and a
 (`D365_ORG_URL`, `D365_ACCESS_TOKEN`, or the OAuth client fields
 `D365_TENANT_ID`/`D365_CLIENT_ID`/`D365_CLIENT_SECRET` plus `D365_REFRESH_TOKEN`
 or `D365_AUTH_CODE`) and forwards them with every tool call — see `.env.example`.
+Write tools require `_approvalToken`; it is removed before provider validation and
+verified against `D365_WRITE_APPROVAL_TOKEN` in constant time.
 
 **Deploying to HTTPS (e.g., Railway):**
 
@@ -226,6 +240,9 @@ instance over MCP Streamable HTTP (`GET`/`POST`/`DELETE`), so a deployed contain
 `initialize`, `tools/list`, and `tools/call` from any MCP client. Note: `mcp/http-server.ts`
 shims `globalThis.crypto`, because the MCP SDK references the global `crypto` object and
 that bare reference fails on some Node 18 runtimes.
+The HTTP endpoint rejects anonymous requests unless `Authorization: Bearer <MCP_API_KEY>`
+matches, rate-limits callers by IP, and emits CORS headers only for origins explicitly
+listed in `MCP_ALLOWED_ORIGINS`.
 
 ---
 
@@ -234,13 +251,16 @@ that bare reference fails on some Node 18 runtimes.
 - **Normalized errors** — every failure is a `ConnectorError` with a machine-readable
   `code`, secret-safe `message`, the provider `requestId` (from `x-ms-request-id`), and a
   `retryable` classification (see `src/errors/index.ts`).
-- **Automatic retry** — retryable failures (429 / 5xx / network) are retried with
+- **Safe automatic retry** — retryable GET and idempotent PATCH failures (429 / 5xx /
+  network) are retried with
   exponential backoff (default 2 attempts, `maxRetries` configurable). `Retry-After` is
   honored when present (`retryAfterMs` on the error); the backoff is capped by default.
+  POST creates and DELETE requests are never automatically retried.
 - **Rate limits** — Dataverse service protection limits (per-user burst/concurrent; see
   `docs/research/permissions-limits-blockers.md`). On `429`, `Retry-After` is honored.
-- **Pagination** — list results return `nextLink` (`@odata.nextLink`) and pagination
-  metadata.
+- **Pagination** — list results return `nextLink` (`@odata.nextLink`); pass that link back
+  to `dynamics.search_contact` to safely fetch the next page. Cross-origin/version links
+  are rejected.
 - **Security** — OAuth tokens never appear in logs or messages; `client_secret`,
   `access_token`, and `refresh_token` values are redacted from surfaced messages. Tokens
   are cached in memory only and refreshed before expiry.
@@ -253,14 +273,14 @@ that bare reference fails on some Node 18 runtimes.
    real sandbox flows require your own `.env`.
 2. **Live validation pending** — the final end-to-end run against a real Dynamics 365
    org was not performed because **no Microsoft 365 tenant and Azure AD environment is
-   available**. The whole stack is proven offline: unit + integration tests (110) and
+   available**. The whole stack is proven offline: unit + integration tests (125) and
    `npm run demo` against the bundled mock sandbox. The submission note in
    `docs/SUBMISSION.md` states this explicitly with the steps to unblock.
 3. **Write actions are not idempotent** — `create_*` actions create a new record on every
    call; dedupe via search (update_contact is PATCH-idempotent).
 4. **Deep/batch inserts** are not exposed — each action maps to a single Web API request.
 5. **`testConnection`** validates the credential shape and runs a real `WhoAmI()` probe
-   whenever a token source is provided (no token source → probe skipped).
+   only when a usable token source permits a real `WhoAmI()` probe; otherwise it fails.
 
 ---
 
@@ -269,7 +289,9 @@ that bare reference fails on some Node 18 runtimes.
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
 | `401 Unauthorized` | Expired/invalid token | Refresh the token (`refresh_token` grant) or re-authenticate |
-| `429 Too Many Requests` | Service protection limit | Automatic retry with backoff (honors `Retry-After`); tune `maxRetries` |
+| `429 Too Many Requests` | Service protection limit | Safe reads/idempotent updates retry with backoff; creates return the error for reconciliation |
+| `401 Unauthorized` from HTTP MCP | Missing/invalid MCP bearer key | Set `MCP_API_KEY` and send it as a Bearer token |
+| `APPROVAL_REQUIRED` | Missing/invalid write approval | Obtain approval and provide the matching approval token |
 | `404 Not Found` | Wrong entity set or record id | Verify entity name and GUID |
 | `400 Invalid request` | Schema violation | Check the action input against its JSON Schema |
 | Secrets in error text | Unsanitized provider message | Use `normalizeDynamicsError` (already wired in the client) |
@@ -289,4 +311,4 @@ that bare reference fails on some Node 18 runtimes.
 
 ## License
 
-Private — DOO Builders League cohort project (no license, all rights reserved).
+MIT. See `LICENSE` and `docs/THIRD_PARTY_NOTICES.md`.

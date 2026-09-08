@@ -194,8 +194,14 @@ export const searchContactInputSchema = {
       description:
         "Search term matched against the contact full name (becomes `contains(fullname,'<query>')`).",
     },
+    nextLink: {
+      type: 'string',
+      format: 'uri-reference',
+      description: 'Provider-issued @odata.nextLink from a previous search page.',
+    },
     filter: {
       type: 'string',
+      minLength: 1,
       description:
         "Additional OData $filter expression to narrow results, e.g. `contains(fullname,'john') and emailaddress1 ne null`.",
     },
@@ -208,12 +214,12 @@ export const searchContactInputSchema = {
     },
     select: {
       type: 'array',
-      items: { type: 'string' },
+      items: { type: 'string', minLength: 1 },
       description:
         'Attributes to return per contact ($select), e.g. ["contactid","firstname","lastname","emailaddress1"]. Defaults to all contact fields.',
     },
   },
-  required: ['query'],
+  anyOf: [{ required: ['query'] }, { required: ['nextLink'] }],
   additionalProperties: false,
 };
 
@@ -237,7 +243,7 @@ export const searchContactOutputSchema = {
     },
     nextLink: {
       type: 'string',
-      format: 'uri',
+      format: 'uri-reference',
       description: 'OData `@odata.nextLink` URL for the next page, when pagination applies.',
     },
   },

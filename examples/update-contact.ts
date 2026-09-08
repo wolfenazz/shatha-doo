@@ -28,7 +28,7 @@ async function main(): Promise<void> {
       companyname: 'Example Corp (renamed)',
     },
     metadata: {
-      approval: 'required',
+      approvalToken: process.env.D365_WRITE_APPROVAL_TOKEN,
       requestId: 'example-update-contact-001',
       retry: { idempotent: true }, // PATCH is idempotent
     },

@@ -57,12 +57,14 @@ const VALID_CREDENTIALS = {
   orgUrl: 'https://contoso.api.crm.dynamics.com',
   accessToken: 'test-access-token',
 };
+const APPROVAL_TOKEN = 'unit-test-approval-token';
+const APPROVAL_METADATA = { approvalToken: APPROVAL_TOKEN };
 
 describe('Dynamics365Connector (S3.2.2)', () => {
   let connector: Dynamics365Connector;
 
   beforeEach(() => {
-    connector = new Dynamics365Connector();
+    connector = new Dynamics365Connector({ approvalToken: APPROVAL_TOKEN });
     (acquireTokenResponse as jest.Mock).mockReset();
     (refreshAccessToken as jest.Mock).mockReset();
     (acquireTokenResponse as jest.Mock).mockResolvedValue({
@@ -139,14 +141,25 @@ describe('Dynamics365Connector (S3.2.2)', () => {
     });
 
     it('routes each known action id to its registered handler', async () => {
+      const inputs: Record<string, unknown> = {
+        'dynamics.search_contact': { query: 'John' },
+        'dynamics.create_contact': { firstname: 'John' },
+        'dynamics.update_contact': {
+          contactid: '11111111-1111-1111-1111-111111111111',
+          firstname: 'Jane',
+        },
+        'dynamics.create_lead': { companyname: 'Example Corp' },
+        'dynamics.create_task': { subject: 'Follow up' },
+      };
       for (const id of REQUIRED_IDS) {
         const spy = jest.fn(async () => ({ success: true, data: { actionId: id } }));
         connector.registerHandler(id, spy);
 
         const result = await connector.execute({
           actionId: id,
-          input: {},
+          input: inputs[id],
           credentials: VALID_CREDENTIALS,
+          ...(id === 'dynamics.search_contact' ? {} : { metadata: APPROVAL_METADATA }),
         });
 
         expect(spy).toHaveBeenCalledTimes(1);
@@ -166,6 +179,7 @@ describe('Dynamics365Connector (S3.2.2)', () => {
         actionId: 'dynamics.create_contact',
         input,
         credentials: VALID_CREDENTIALS,
+        metadata: APPROVAL_METADATA,
       });
 
       const [client, handlerInput, handlerCredentials] = spy.mock.calls[0] as unknown as [
@@ -188,6 +202,7 @@ describe('Dynamics365Connector (S3.2.2)', () => {
         actionId: 'dynamics.create_task',
         input: { subject: 'x' },
         credentials: VALID_CREDENTIALS,
+        metadata: APPROVAL_METADATA,
       });
 
       expect(result.success).toBe(false);
@@ -208,6 +223,68 @@ describe('Dynamics365Connector (S3.2.2)', () => {
       expect(result.success).toBe(false);
       expect(result.error as ConnectorError).toMatchObject({ code: 'MISSING_ORG_URL' });
     });
+
+    it('blocks write handlers before provider access when approval is absent or forged', async () => {
+      const spy = jest.fn(async () => ({ success: true, data: {} }));
+      connector.registerHandler('dynamics.create_contact', spy);
+
+      for (const metadata of [undefined, {}, { approvalToken: true }, { approvalToken: 'wrong' }]) {
+        const result = await connector.execute({
+          actionId: 'dynamics.create_contact',
+          input: { firstname: 'Blocked' },
+          credentials: VALID_CREDENTIALS,
+          metadata: metadata as Record<string, unknown> | undefined,
+        });
+        expect(result.success).toBe(false);
+        expect(result.error as ConnectorError).toMatchObject({
+          code: 'APPROVAL_REQUIRED',
+          retryable: false,
+        });
+      }
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('enforces the published schema before a provider handler runs', async () => {
+      const spy = jest.fn(async () => ({ success: true, data: {} }));
+      connector.registerHandler('dynamics.create_task', spy);
+      const result = await connector.execute({
+        actionId: 'dynamics.create_task',
+        input: { subject: 'Task', scheduledstart: 'not-a-date', unexpected: true },
+        credentials: VALID_CREDENTIALS,
+        metadata: APPROVAL_METADATA,
+      });
+      expect(result.success).toBe(false);
+      expect(result.error as ConnectorError).toMatchObject({ code: 'VALIDATION_ERROR' });
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('creates a request-scoped client for each credential set', async () => {
+      const clients: Dynamics365Client[] = [];
+      connector.registerHandler('dynamics.search_contact', async (client) => {
+        clients.push(client);
+        return { success: true, data: { contacts: [], count: 0 } };
+      });
+      await connector.execute({
+        actionId: 'dynamics.search_contact',
+        input: { query: 'A' },
+        credentials: VALID_CREDENTIALS,
+      });
+      await connector.execute({
+        actionId: 'dynamics.search_contact',
+        input: { query: 'B' },
+        credentials: {
+          orgUrl: 'https://fabrikam.api.crm.dynamics.com',
+          accessToken: 'other-token',
+        },
+      });
+      expect(clients).toHaveLength(2);
+      expect(clients[0]).not.toBe(clients[1]);
+      expect(axios.create).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          baseURL: 'https://fabrikam.api.crm.dynamics.com/api/data/v9.2/',
+        }),
+      );
+    });
   });
 
   describe('testConnection (S2.2.2)', () => {
@@ -216,7 +293,7 @@ describe('Dynamics365Connector (S3.2.2)', () => {
       expect(result.success).toBe(true);
     });
 
-    it('passes when orgUrl + OAuth client fields are present', async () => {
+    it('fails when OAuth client fields have no usable token source', async () => {
       const result = await connector.testConnection({
         orgUrl: 'https://org.api.crm.dynamics.com',
         tenantId: 'tenant-1',
@@ -224,7 +301,8 @@ describe('Dynamics365Connector (S3.2.2)', () => {
         clientSecret: 'secret-1',
         redirectUri: 'http://localhost:3000/callback',
       });
-      expect(result.success).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.details).toMatchObject({ probe: { status: 'not_run' } });
     });
 
     it('fails for non-object credentials', async () => {
@@ -263,15 +341,15 @@ describe('Dynamics365Connector (S3.2.2)', () => {
       expect(result.details).toMatchObject({ probe: { status: 'ok' } });
     });
 
-    it('skips the WhoAmI probe when no token source exists (v1.1.0)', async () => {
+    it('does not claim success when no token source exists', async () => {
       const result = await connector.testConnection({
         orgUrl: 'https://org.api.crm.dynamics.com',
         tenantId: 'tenant-1',
         clientId: 'client-1',
         clientSecret: 'secret-1',
       });
-      expect(result.success).toBe(true);
-      expect(result.details).toMatchObject({ probe: { status: 'skipped' } });
+      expect(result.success).toBe(false);
+      expect(result.details).toMatchObject({ probe: { status: 'not_run' } });
     });
 
     it('reports a failed WhoAmI probe as diagnostics without throwing (v1.1.0)', async () => {
@@ -331,6 +409,7 @@ describe('Dynamics365Connector (S3.2.2)', () => {
         actionId: 'dynamics.create_contact',
         input: { firstname: 'Jane' },
         credentials,
+        metadata: APPROVAL_METADATA,
       });
       return { result, authorization };
     }
@@ -369,6 +448,12 @@ describe('Dynamics365Connector (S3.2.2)', () => {
 
       expect(refreshAccessToken).toHaveBeenCalledTimes(1);
       expect(second.authorization).toBe('Bearer oauth-access');
+    });
+
+    it('does not share cached OAuth tokens across principals', async () => {
+      await runWithCredentials(OAUTH_CREDENTIALS);
+      await runWithCredentials({ ...OAUTH_CREDENTIALS, clientId: 'client-2' });
+      expect(refreshAccessToken).toHaveBeenCalledTimes(2);
     });
 
     it('prefers a caller-supplied accessToken and never calls the token endpoint', async () => {

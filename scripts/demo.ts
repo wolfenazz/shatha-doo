@@ -62,7 +62,7 @@ async function main(): Promise<void> {
     // ---- Step 1: testConnection -> WhoAmI probe -------------------------
     {
       const started = Date.now();
-      const connector = new Dynamics365Connector();
+      const connector = new Dynamics365Connector({ allowLocalhost: true });
       const result = await connector.testConnection({
         orgUrl: sandbox.url,
         accessToken: 'sandbox-demo-token',
@@ -79,7 +79,13 @@ async function main(): Promise<void> {
     // ---- Step 2: MCP handshake ------------------------------------------
     process.env.D365_ORG_URL = sandbox.url;
     process.env.D365_ACCESS_TOKEN = 'sandbox-demo-token';
-    const server = createMcpServer();
+    process.env.D365_WRITE_APPROVAL_TOKEN = 'sandbox-demo-approval';
+    const server = createMcpServer(
+      new Dynamics365Connector({
+        allowLocalhost: true,
+        approvalToken: 'sandbox-demo-approval',
+      }),
+    );
     const client = new Client({ name: 'demo-client', version: '1.0.0' });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
@@ -99,6 +105,7 @@ async function main(): Promise<void> {
     {
       const started = Date.now();
       const { text, isError } = await callTool(client, 'dynamics.create_contact', {
+        _approvalToken: 'sandbox-demo-approval',
         firstname: 'Shatha',
         lastname: 'Demo',
         emailaddress1: 'shatha.demo@example.com',
@@ -127,6 +134,7 @@ async function main(): Promise<void> {
 
       const updateStarted = Date.now();
       const update = await callTool(client, 'dynamics.update_contact', {
+        _approvalToken: 'sandbox-demo-approval',
         contactid,
         telephone1: '+1-555-0999',
       });
@@ -139,6 +147,7 @@ async function main(): Promise<void> {
 
       const leadStarted = Date.now();
       const lead = await callTool(client, 'dynamics.create_lead', {
+        _approvalToken: 'sandbox-demo-approval',
         companyname: 'DOO Builders League',
         firstname: 'Shatha',
         lastname: 'Demo',
@@ -154,6 +163,7 @@ async function main(): Promise<void> {
 
       const taskStarted = Date.now();
       const task = await callTool(client, 'dynamics.create_task', {
+        _approvalToken: 'sandbox-demo-approval',
         subject: 'Follow up with the demo contact',
         description: 'Created by the offline demo — no tenant required',
         regardingobjectid: contactid,
@@ -172,6 +182,7 @@ async function main(): Promise<void> {
   } finally {
     delete process.env.D365_ORG_URL;
     delete process.env.D365_ACCESS_TOKEN;
+    delete process.env.D365_WRITE_APPROVAL_TOKEN;
     await sandbox.close();
   }
 

@@ -20,6 +20,8 @@ import { createMcpServer } from '../mcp/server';
 
 describe('integration — real connector vs mock sandbox (v1.1.0)', () => {
   let sandbox: SandboxServer;
+  const approvalToken = 'integration-approval-token';
+  const approval = { approvalToken };
 
   beforeAll(async () => {
     sandbox = await startSandbox();
@@ -40,11 +42,12 @@ describe('integration — real connector vs mock sandbox (v1.1.0)', () => {
   });
 
   it('authenticates via the OAuth authorization_code grant and creates a contact', async () => {
-    const connector = new Dynamics365Connector();
+    const connector = new Dynamics365Connector({ approvalToken });
     const result = await connector.execute({
       actionId: 'dynamics.create_contact',
       input: { firstname: 'OAuth', lastname: 'Flow', emailaddress1: 'oauth.flow@example.com' },
       credentials: oauthCredentials({ code: 'sandbox-code' }),
+      metadata: approval,
     });
 
     expect(result.success).toBe(true);
@@ -54,11 +57,12 @@ describe('integration — real connector vs mock sandbox (v1.1.0)', () => {
   });
 
   it('refreshes tokens via the refresh_token grant', async () => {
-    const connector = new Dynamics365Connector();
+    const connector = new Dynamics365Connector({ approvalToken });
     const result = await connector.execute({
       actionId: 'dynamics.create_lead',
       input: { companyname: 'Refresh Co', firstname: 'Refresh' },
       credentials: oauthCredentials({ refreshToken: 'sandbox-refresh-old' }),
+      metadata: approval,
     });
 
     expect(result.success).toBe(true);
@@ -66,7 +70,7 @@ describe('integration — real connector vs mock sandbox (v1.1.0)', () => {
   });
 
   it('testConnection probes WhoAmI() and reports the user identity', async () => {
-    const connector = new Dynamics365Connector();
+    const connector = new Dynamics365Connector({ approvalToken });
     const result = await connector.testConnection({
       orgUrl: sandbox.url,
       accessToken: 'sandbox-direct-token',
@@ -83,7 +87,7 @@ describe('integration — real connector vs mock sandbox (v1.1.0)', () => {
   });
 
   it('runs all five actions end-to-end', async () => {
-    const connector = new Dynamics365Connector();
+    const connector = new Dynamics365Connector({ approvalToken });
 
     const created = await connector.execute({
       actionId: 'dynamics.create_contact',
@@ -94,6 +98,7 @@ describe('integration — real connector vs mock sandbox (v1.1.0)', () => {
         telephone1: '+1-555-0100',
       },
       credentials: oauthCredentials({ accessToken: 'sandbox-e2e-token' }),
+      metadata: approval,
     });
     expect(created.success).toBe(true);
     const contactid = (created.data as { contactid: string }).contactid;
@@ -102,6 +107,7 @@ describe('integration — real connector vs mock sandbox (v1.1.0)', () => {
       actionId: 'dynamics.search_contact',
       input: { query: 'E2E', top: 5 },
       credentials: oauthCredentials({ accessToken: 'sandbox-e2e-token' }),
+      metadata: approval,
     });
     expect(search.success).toBe(true);
     const searchData = search.data as { contacts: Array<{ contactid: string }>; count: number };
@@ -112,6 +118,7 @@ describe('integration — real connector vs mock sandbox (v1.1.0)', () => {
       actionId: 'dynamics.update_contact',
       input: { contactid, telephone1: '+1-555-0999' },
       credentials: oauthCredentials({ accessToken: 'sandbox-e2e-token' }),
+      metadata: approval,
     });
     expect(updated.success).toBe(true);
 
@@ -119,6 +126,7 @@ describe('integration — real connector vs mock sandbox (v1.1.0)', () => {
       actionId: 'dynamics.create_lead',
       input: { companyname: 'E2E Corp', firstname: 'Lead', subject: 'Integration lead' },
       credentials: oauthCredentials({ accessToken: 'sandbox-e2e-token' }),
+      metadata: approval,
     });
     expect(lead.success).toBe(true);
     expect((lead.data as { leadid?: string }).leadid).toBeDefined();
@@ -127,6 +135,7 @@ describe('integration — real connector vs mock sandbox (v1.1.0)', () => {
       actionId: 'dynamics.create_task',
       input: { subject: 'Follow up on E2E contact', regardingobjectid: contactid },
       credentials: oauthCredentials({ accessToken: 'sandbox-e2e-token' }),
+      metadata: approval,
     });
     expect(task.success).toBe(true);
     expect((task.data as { activityid?: string }).activityid).toBeDefined();
@@ -145,12 +154,13 @@ describe('integration — real connector vs mock sandbox (v1.1.0)', () => {
   });
 
   it('returns pagination metadata with an @odata.nextLink', async () => {
-    const connector = new Dynamics365Connector();
+    const connector = new Dynamics365Connector({ approvalToken });
     for (let i = 0; i < 5; i += 1) {
       const result = await connector.execute({
         actionId: 'dynamics.create_contact',
         input: { firstname: `Bulk${i}`, lastname: 'Page' },
         credentials: oauthCredentials({ accessToken: 'sandbox-bulk-token' }),
+        metadata: approval,
       });
       expect(result.success).toBe(true);
     }
@@ -172,6 +182,15 @@ describe('integration — real connector vs mock sandbox (v1.1.0)', () => {
     expect(
       (search.metadata as { pagination: { hasNextPage: boolean } }).pagination.hasNextPage,
     ).toBe(true);
+
+    const nextPage = await connector.execute({
+      actionId: 'dynamics.search_contact',
+      input: { nextLink: data.nextLink },
+      credentials: oauthCredentials({ accessToken: 'sandbox-bulk-token' }),
+    });
+    if (!nextPage.success) throw nextPage.error;
+    expect(nextPage).toMatchObject({ success: true });
+    expect((nextPage.data as { contacts: unknown[] }).contacts.length).toBeGreaterThan(0);
   });
 
   it('retries 429 responses (honoring Retry-After) and succeeds', async () => {
@@ -227,6 +246,7 @@ describe('integration — real connector vs mock sandbox (v1.1.0)', () => {
   it('exposes the five tools over the real MCP protocol and executes create_contact', async () => {
     process.env.D365_ORG_URL = sandbox.url;
     process.env.D365_ACCESS_TOKEN = 'sandbox-mcp-token';
+    process.env.D365_WRITE_APPROVAL_TOKEN = approvalToken;
     try {
       const server = createMcpServer();
       const client = new Client({ name: 'integration-client', version: '1.0.0' });
@@ -247,7 +267,12 @@ describe('integration — real connector vs mock sandbox (v1.1.0)', () => {
 
       const call = await client.callTool({
         name: 'dynamics.create_contact',
-        arguments: { firstname: 'Mcp', lastname: 'User', emailaddress1: 'mcp.user@example.com' },
+        arguments: {
+          firstname: 'Mcp',
+          lastname: 'User',
+          emailaddress1: 'mcp.user@example.com',
+          _approvalToken: approvalToken,
+        },
       });
       expect(call.isError).not.toBe(true);
       const text =
@@ -264,6 +289,7 @@ describe('integration — real connector vs mock sandbox (v1.1.0)', () => {
     } finally {
       delete process.env.D365_ORG_URL;
       delete process.env.D365_ACCESS_TOKEN;
+      delete process.env.D365_WRITE_APPROVAL_TOKEN;
     }
   });
 });

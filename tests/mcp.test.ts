@@ -140,6 +140,28 @@ describe('mcp/server.ts — thin MCP adapter (T3.1)', () => {
     expect(textOf(result)).toContain('John Doe');
   });
 
+  it('requires and forwards explicit approval for write tools without leaking it into input', async () => {
+    execute.mockResolvedValue({ success: true, data: { accepted: true } });
+    const denied = await client.callTool({
+      name: 'dynamics.create_contact',
+      arguments: { query: 'Jane' },
+    });
+    expect(denied.isError).toBe(true);
+    expect(execute).not.toHaveBeenCalled();
+
+    const allowed = await client.callTool({
+      name: 'dynamics.create_contact',
+      arguments: { query: 'Jane', _approvalToken: 'approved-token' },
+    });
+    expect(allowed.isError).not.toBe(true);
+    expect(execute).toHaveBeenCalledWith({
+      actionId: 'dynamics.create_contact',
+      input: { query: 'Jane' },
+      credentials: undefined,
+      metadata: { approvalToken: 'approved-token' },
+    });
+  });
+
   it('S3.1.4: failed execution surfaces the ConnectorError code + message as isError', async () => {
     execute.mockResolvedValue({
       success: false,
@@ -192,6 +214,24 @@ describe('mcp/server.ts — thin MCP adapter (T3.1)', () => {
     // Non-schema input degrades to an empty shape.
     expect(jsonSchemaToZodShape(null)).toEqual({});
     expect(jsonSchemaToZodShape({ type: 'string' })).toEqual({});
+  });
+
+  it('preserves string, numeric, format, pattern, and array-item constraints', () => {
+    const shape = jsonSchemaToZodShape({
+      type: 'object',
+      properties: {
+        name: { type: 'string', minLength: 2, pattern: '^[A-Z]' },
+        top: { type: 'integer', minimum: 1, maximum: 5 },
+        when: { type: 'string', format: 'date-time' },
+        ids: { type: 'array', items: { type: 'string', minLength: 1 } },
+      },
+      required: ['name'],
+    });
+    expect(shape.name.safeParse('Alice').success).toBe(true);
+    expect(shape.name.safeParse('a').success).toBe(false);
+    expect(shape.top.safeParse(6).success).toBe(false);
+    expect(shape.when.safeParse('not-a-date').success).toBe(false);
+    expect(shape.ids.safeParse(['']).success).toBe(false);
   });
 
   it('v1.1.0: credentialsFromEnv returns undefined without D365_ORG_URL', () => {

@@ -30,7 +30,7 @@ async function main(): Promise<void> {
       regardingobjectid: '11111111-1111-1111-1111-111111111111',
     },
     metadata: {
-      approval: 'required',
+      approvalToken: process.env.D365_WRITE_APPROVAL_TOKEN,
       requestId: 'example-create-task-001',
       retry: { idempotent: false },
     },

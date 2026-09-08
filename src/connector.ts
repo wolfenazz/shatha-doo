@@ -34,6 +34,9 @@ import { ConnectorError } from './errors';
 import { actionSchemas } from './schemas';
 import { acquireTokenResponse, refreshAccessToken, DEFAULT_SCOPE } from './auth';
 import type { OAuthConfig } from './auth';
+import { createHash } from 'node:crypto';
+import { jsonSchemaToZod } from './schema-validation';
+import { secureEqual, validateOrgUrl, validateTokenUrl } from './security';
 import { searchContactAction, searchContactHandler } from './actions/search-contact';
 import { createContactAction, executeCreateContact } from './actions/create-contact';
 import { updateContactAction, executeUpdateContact } from './actions/update-contact';
@@ -46,6 +49,11 @@ export type ActionHandler = (
   input: unknown,
   credentials?: unknown,
 ) => Promise<ConnectorExecutionResult>;
+
+export interface Dynamics365ConnectorOptions {
+  approvalToken?: string;
+  allowLocalhost?: boolean;
+}
 
 /** Cached token with a conservative expiry window (skew-safe). */
 interface TokenCacheEntry {
@@ -70,12 +78,15 @@ function withSchemas(def: ConnectorAction): ConnectorAction {
 
 export class Dynamics365Connector implements DooConnector {
   manifest: ConnectorManifest;
-  private client: Dynamics365Client | null = null;
   private actions: Map<string, ConnectorAction>;
   private handlers: Map<string, ActionHandler>;
-  private tokenCache: TokenCacheEntry | null = null;
+  private tokenCache = new Map<string, TokenCacheEntry>();
+  private readonly approvalToken?: string;
+  private readonly allowLocalhost: boolean;
 
-  constructor() {
+  constructor(options: Dynamics365ConnectorOptions = {}) {
+    this.approvalToken = options.approvalToken ?? process.env.D365_WRITE_APPROVAL_TOKEN;
+    this.allowLocalhost = options.allowLocalhost ?? process.env.NODE_ENV === 'test';
     this.actions = new Map(ACTION_DEFINITIONS.map((def) => [def.id, withSchemas(def)]));
     this.handlers = new Map();
     // Wire all implemented action handlers (T2.3-T2.7).
@@ -167,16 +178,19 @@ export class Dynamics365Connector implements DooConnector {
       clientSecret,
       scope: scope ?? '',
       redirectUri: redirectUri ?? '',
+      allowLocalhost: this.allowLocalhost,
       ...(Dynamics365Connector.asString(cred.tokenUrl) !== undefined
         ? { tokenUrl: Dynamics365Connector.asString(cred.tokenUrl) as string }
         : {}),
     };
+    const cacheKey = this.credentialCacheKey(cred);
 
     return async () => {
-      if (this.tokenCache !== null && this.tokenCache.expiresAt > Date.now()) {
-        return this.tokenCache.accessToken;
+      const cached = this.tokenCache.get(cacheKey);
+      if (cached !== undefined && cached.expiresAt > Date.now()) {
+        return cached.accessToken;
       }
-      const refreshToken = this.tokenCache?.refreshToken ?? cred.refreshToken;
+      const refreshToken = cached?.refreshToken ?? cred.refreshToken;
       const response =
         typeof refreshToken === 'string' && refreshToken.length > 0
           ? await refreshAccessToken({ ...base, refreshToken })
@@ -184,14 +198,33 @@ export class Dynamics365Connector implements DooConnector {
               ...base,
               code: Dynamics365Connector.asString(cred.code),
             });
-      this.tokenCache = {
+      if (this.tokenCache.size >= 100 && !this.tokenCache.has(cacheKey)) {
+        const oldestKey = this.tokenCache.keys().next().value as string | undefined;
+        if (oldestKey) this.tokenCache.delete(oldestKey);
+      }
+      this.tokenCache.set(cacheKey, {
         accessToken: response.accessToken,
         refreshToken:
           response.refreshToken ?? (typeof refreshToken === 'string' ? refreshToken : undefined),
-        expiresAt: Date.now() + ((response.expiresIn ?? 3600) - 60) * 1000,
-      };
+        expiresAt: Date.now() + Math.max(0, (response.expiresIn ?? 3600) - 60) * 1000,
+      });
       return response.accessToken;
     };
+  }
+
+  /** Keys OAuth cache entries by organization, tenant, principal, and credential identity. */
+  private credentialCacheKey(cred: Record<string, unknown>): string {
+    const identity = [
+      'orgUrl',
+      'tenantId',
+      'clientId',
+      'clientSecret',
+      'scope',
+      'tokenUrl',
+      'refreshToken',
+      'code',
+    ].map((key) => [key, Dynamics365Connector.asString(cred[key]) ?? '']);
+    return createHash('sha256').update(JSON.stringify(identity)).digest('hex');
   }
 
   /**
@@ -201,9 +234,6 @@ export class Dynamics365Connector implements DooConnector {
    * client fields in `src/auth`).
    */
   private getClient(credentials?: unknown): Dynamics365Client {
-    if (this.client) {
-      return this.client;
-    }
     const cred = (credentials ?? {}) as Record<string, unknown>;
     if (typeof cred.orgUrl !== 'string' || cred.orgUrl.trim().length === 0) {
       throw new ConnectorError(
@@ -213,11 +243,11 @@ export class Dynamics365Connector implements DooConnector {
         false,
       );
     }
-    this.client = new Dynamics365Client({
-      orgUrl: cred.orgUrl,
+    return new Dynamics365Client({
+      orgUrl: validateOrgUrl(cred.orgUrl, this.allowLocalhost),
       getAccessToken: this.buildTokenProvider(cred),
+      allowLocalhost: this.allowLocalhost,
     });
-    return this.client;
   }
 
   listActions(): ConnectorAction[] {
@@ -248,6 +278,22 @@ export class Dynamics365Connector implements DooConnector {
         details: { missing },
       };
     }
+    if (!Dynamics365Connector.hasTokenSource(cred)) {
+      return {
+        success: false,
+        message:
+          'Missing usable token source: provide accessToken, refreshToken, or authorization code',
+        details: { missing: ['accessToken|refreshToken|code'], probe: { status: 'not_run' } },
+      };
+    }
+    try {
+      validateOrgUrl(cred.orgUrl as string, this.allowLocalhost);
+      const tokenUrl = Dynamics365Connector.asString(cred.tokenUrl);
+      if (tokenUrl) validateTokenUrl(tokenUrl, this.allowLocalhost);
+    } catch (error) {
+      const normalized = error as ConnectorError;
+      return { success: false, message: normalized.message, details: { code: normalized.code } };
+    }
     return this.probeConnection(cred);
   }
 
@@ -258,13 +304,6 @@ export class Dynamics365Connector implements DooConnector {
    * probe is a diagnostic, not a credential-shape failure.
    */
   private async probeConnection(cred: Record<string, unknown>): Promise<ConnectionTestResult> {
-    if (!Dynamics365Connector.hasTokenSource(cred)) {
-      return {
-        success: true,
-        message: 'Credential shape is valid (WhoAmI probe skipped - no token source provided)',
-        details: { probe: { status: 'skipped' } },
-      };
-    }
     try {
       const who = await this.getClient(cred).whoAmI();
       return {
@@ -313,7 +352,29 @@ export class Dynamics365Connector implements DooConnector {
       };
     }
     try {
-      return await handler(this.getClient(request.credentials), request.input, request.credentials);
+      if (action.type === 'write') {
+        const suppliedToken =
+          typeof request.metadata?.approvalToken === 'string'
+            ? request.metadata.approvalToken
+            : undefined;
+        if (!secureEqual(suppliedToken, this.approvalToken)) {
+          throw new ConnectorError(
+            `Approval is required for write action ${request.actionId}`,
+            'APPROVAL_REQUIRED',
+            undefined,
+            false,
+          );
+        }
+      }
+      const parsed = jsonSchemaToZod(action.inputSchema).safeParse(request.input);
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0];
+        throw new ConnectorError(
+          `Invalid input${issue?.path.length ? ` at ${issue.path.join('.')}` : ''}: ${issue?.message ?? 'schema validation failed'}`,
+          'VALIDATION_ERROR',
+        );
+      }
+      return await handler(this.getClient(request.credentials), parsed.data, request.credentials);
     } catch (error) {
       // The DooConnector contract: execute() resolves with a normalized result
       // even when the handler throws (e.g. a ConnectorError from the client).

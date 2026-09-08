@@ -222,6 +222,46 @@ describe('src/client - Dynamics365Client', () => {
       expect(result).toEqual({ contactid: '11111111-1111-1111-1111-111111111111' });
     });
 
+    it('never retries a non-idempotent POST and marks its failure non-retryable', async () => {
+      const client = new Dynamics365Client({ ...baseConfig, maxRetries: 3, retryBaseDelayMs: 1 });
+      const inst = lastInstance();
+      inst.post.mockRejectedValue(
+        new ConnectorError('Provider error', 'PROVIDER_ERROR', 'req-post', true),
+      );
+      await expect(client.post('contacts', { firstname: 'No duplicate' })).rejects.toMatchObject({
+        code: 'PROVIDER_ERROR',
+        retryable: false,
+      });
+      expect(inst.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('preserves successful rate-limit and request-id headers', async () => {
+      const client = new Dynamics365Client(baseConfig);
+      const inst = lastInstance();
+      inst.get.mockResolvedValue({
+        data: { value: [] },
+        headers: {
+          'x-ms-request-id': 'req-success',
+          'x-ms-ratelimit-burst-remaining-xrm-requests': '42',
+          'x-ms-ratelimit-time-remaining-xrm-requests': '00:04:12',
+        },
+      });
+      const response = await client.getWithMetadata<{ value: unknown[] }>('contacts');
+      expect(response.metadata).toEqual({
+        requestId: 'req-success',
+        rateLimit: { remainingRequests: 42, remainingTime: '00:04:12' },
+      });
+    });
+
+    it('rejects cross-origin OData next links before making a request', async () => {
+      const client = new Dynamics365Client(baseConfig);
+      const inst = lastInstance();
+      await expect(
+        client.getNextPage('https://attacker.example/api/data/v9.2/contacts?$skiptoken=x'),
+      ).rejects.toMatchObject({ code: 'INVALID_NEXT_LINK' });
+      expect(inst.get).not.toHaveBeenCalled();
+    });
+
     it('post(path, body, { preferReturn: true }) adds Prefer: return=representation (create §2.5)', async () => {
       const client = new Dynamics365Client(baseConfig);
       const inst = lastInstance();
